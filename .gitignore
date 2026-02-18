@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+ENV/
+
+# Environment variables (SENSITIVE - NEVER COMMIT)
+.env
+*.env
+sqy-prod.json
+*.json
+!package.json
+!package-lock.json
+
+# Recordings (large files)
+recordings/
+*.webm
+*.mp3
+*.wav
+*.mp4
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/

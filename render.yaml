@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ai-interview-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/sqy-prod.json
+      - key: PROJECT_ID
+        fromDatabase: false
+        sync: false
+      - key: LOCATION
+        value: us-central1
+      - key: LOG_LEVEL
+        value: INFO
+    rootDir: Backend
