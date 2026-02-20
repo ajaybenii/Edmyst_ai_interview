@@ -4,117 +4,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Voice Interviewer - Holographic</title>
+    <title>AI Interview — Edmyst</title>
     <link rel="icon" type="image/png" href="favicon.png">
     <link rel="apple-touch-icon" href="favicon.png">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded" rel="stylesheet">
     <style>
         :root {
-            /* Night Mode (Default) */
-            --bg: #000000;
-            --surface: rgba(255, 255, 255, 0.04);
-            --border: rgba(255, 255, 255, 0.08);
-            --text: #ffffff;
-            --text-dim: rgba(255, 255, 255, 0.5);
-            --cyan: #00ffd5;
-            --purple: #bf5af2;
-            --blue: #0a84ff;
-            --green: #30d158;
-            --red: #ff453a;
-            --yellow: #ffd60a;
-        }
-
-        [data-theme="light"] {
-            --bg: linear-gradient(135deg, #e8f4fc 0%, #f0f7ff 25%, #ffffff 50%, #f5f9ff 75%, #e3f0fc 100%);
-            --surface: rgba(255, 255, 255, 0.7);
-            --border: rgba(59, 130, 246, 0.15);
+            /* Day Mode — Design 1 */
+            --bg: #dbeafe;
+            --surface: rgba(255, 255, 255, 0.65);
+            --border: rgba(255, 255, 255, 0.85);
             --text: #1e3a5f;
-            --text-dim: rgba(30, 58, 95, 0.6);
-            --cyan: #0ea5e9;
-            --purple: #8b5cf6;
-            --blue: #3b82f6;
+            --text-dim: rgba(30, 58, 95, 0.55);
+            --accent: #3b82f6;
+            --accent2: #6366f1;
             --green: #10b981;
             --red: #ef4444;
             --yellow: #f59e0b;
-        }
-
-        [data-theme="light"] body {
-            background: linear-gradient(135deg, #e8f4fc 0%, #f0f7ff 25%, #ffffff 50%, #f5f9ff 75%, #e3f0fc 100%);
-        }
-
-        [data-theme="light"] .glass {
-            background: rgba(255, 255, 255, 0.75);
-            backdrop-filter: blur(20px);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-        }
-
-        [data-theme="light"] .header {
-            background: rgba(255, 255, 255, 0.8);
-            border-bottom: 1px solid rgba(59, 130, 246, 0.15);
-        }
-
-        [data-theme="light"] .btn-primary {
-            background: linear-gradient(135deg, #3b82f6 0%, #0ea5e9 100%);
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
-        }
-
-        [data-theme="light"] .btn-secondary {
-            background: rgba(255, 255, 255, 0.8);
-            border: 1px solid rgba(59, 130, 246, 0.3);
-            color: #3b82f6;
-        }
-
-        /* Day mode uses same orb as dark mode - no override needed */
-
-        [data-theme="light"] .message.ai {
-            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(14, 165, 233, 0.1) 100%);
-            border-left: 3px solid #3b82f6;
-        }
-
-        [data-theme="light"] .message.user {
-            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.1) 100%);
-            border-left: 3px solid #10b981;
-        }
-
-        [data-theme="light"] .status-badge {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-        }
-
-        [data-theme="light"] .network-indicator {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-        }
-
-        [data-theme="light"] .interview-timer {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-        }
-
-        [data-theme="light"] .video-btn {
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(59, 130, 246, 0.2);
-            color: #3b82f6;
-        }
-
-        [data-theme="light"] .listening-badge {
-            background: rgba(255, 255, 255, 0.95);
-            color: #1a1a1a;
-            border: 1px solid rgba(0, 0, 0, 0.1);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-        [data-theme="light"] .listening-badge .listening-dot {
-            background: #ef4444;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-        }
-
-        [data-theme="light"] .grid-bg {
-            background-image:
-                linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+            --cyan: #3b82f6;
+            --purple: #6366f1;
+            --blue: #3b82f6;
         }
 
         * {
@@ -124,12 +35,74 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, sans-serif;
-            background: var(--bg);
+            font-family: 'DM Sans', -apple-system, sans-serif;
+            background: linear-gradient(135deg, #dbeafe 0%, #ede9fe 40%, #d1fae5 100%);
             min-height: 100vh;
             color: var(--text);
             overflow: hidden;
-            transition: background 0.3s, color 0.3s;
+        }
+
+        /* Animated bg blobs */
+        .blob {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(60px);
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.5;
+        }
+
+        .blob-1 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(147, 197, 253, 0.6), transparent);
+            top: -150px;
+            left: -100px;
+            animation: floatBlob 18s ease-in-out infinite;
+        }
+
+        .blob-2 {
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(196, 181, 253, 0.5), transparent);
+            bottom: -100px;
+            right: -80px;
+            animation: floatBlob 22s ease-in-out infinite reverse;
+        }
+
+        .blob-3 {
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, rgba(110, 231, 183, 0.4), transparent);
+            top: 40%;
+            left: 60%;
+            animation: floatBlob 16s ease-in-out infinite 5s;
+        }
+
+        @keyframes floatBlob {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -20px) scale(1.05);
+            }
+
+            66% {
+                transform: translate(-20px, 30px) scale(0.95);
+            }
+        }
+
+        /* Dot grid overlay */
+        .dot-grid {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image: radial-gradient(circle, rgba(59, 130, 246, 0.12) 1px, transparent 1px);
+            background-size: 28px 28px;
         }
 
         .grid-bg {
@@ -148,17 +121,6 @@
             background-image:
                 linear-gradient(rgba(0, 0, 0, 0.03) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
-        }
-
-        #bgCanvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            z-index: 0;
-            /* Behind container (1) but above body bg */
-            pointer-events: none;
         }
 
         .container {
@@ -186,9 +148,20 @@
         }
 
         .header h1 {
-            font-size: 24px;
-            font-weight: 600;
+            font-size: 22px;
+            font-weight: 700;
             letter-spacing: -0.4px;
+        }
+
+        .logo-mark {
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
         }
 
         .header-right {
@@ -203,11 +176,12 @@
             align-items: center;
             gap: 8px;
             padding: 8px 14px;
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.7);
             border: 1px solid var(--border);
             border-radius: 12px;
             font-size: 12px;
             font-weight: 500;
+            backdrop-filter: blur(20px);
         }
 
         .network-bars {
@@ -300,8 +274,9 @@
             padding: 8px 16px;
             border-radius: 999px;
             font-size: 12px;
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.7);
             border: 1px solid var(--border);
+            backdrop-filter: blur(20px);
         }
 
         /* Interview Timer */
@@ -310,12 +285,13 @@
             align-items: center;
             gap: 8px;
             padding: 8px 16px;
-            background: var(--surface);
+            background: rgba(255, 255, 255, 0.7);
             border: 1px solid var(--border);
             border-radius: 12px;
             font-size: 14px;
             font-weight: 600;
             font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+            backdrop-filter: blur(20px);
         }
 
         .interview-timer.active {
@@ -323,7 +299,7 @@
         }
 
         .interview-timer .timer-icon {
-            color: var(--cyan);
+            color: var(--accent);
         }
 
         .interview-timer.warning {
@@ -341,13 +317,13 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #3a3a3c;
+            background: #94a3b8;
             transition: all 0.3s;
         }
 
         .status-badge.active .status-dot {
-            background: var(--cyan);
-            box-shadow: 0 0 15px var(--cyan);
+            background: var(--green);
+            box-shadow: 0 0 12px var(--green);
             animation: pulseGlow 2s infinite;
         }
 
@@ -366,22 +342,22 @@
         /* Main Layout */
         .main-content {
             display: grid;
-            grid-template-columns: 1fr 1fr 380px;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 16px;
             height: 100%;
             overflow: hidden;
         }
 
         .glass {
-            background: var(--surface);
-            backdrop-filter: blur(40px);
-            -webkit-backdrop-filter: blur(40px);
-            border: 1px solid var(--border);
-            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            border-radius: 22px;
             padding: 20px;
             display: flex;
             flex-direction: column;
-            transition: background 0.3s, border-color 0.3s;
+            box-shadow: 0 4px 24px rgba(59, 130, 246, 0.07), inset 0 1px 0 rgba(255, 255, 255, 0.9);
         }
 
         .panel-label {
@@ -400,7 +376,7 @@
             width: 6px;
             height: 6px;
             border-radius: 50%;
-            background: var(--cyan);
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
         }
 
         /* Video Panel */
@@ -444,13 +420,13 @@
         }
 
         .video-btn {
-            width: 46px;
-            height: 46px;
+            width: 44px;
+            height: 44px;
             border-radius: 50%;
-            border: 1px solid var(--border);
-            background: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(20px);
-            color: white;
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            color: var(--accent);
             cursor: pointer;
             transition: all 0.2s;
             display: flex;
@@ -459,13 +435,15 @@
         }
 
         .video-btn:hover {
-            background: rgba(0, 255, 213, 0.15);
-            border-color: var(--cyan);
+            background: white;
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.2);
+            transform: translateY(-1px);
         }
 
         .video-btn.active {
-            background: rgba(255, 69, 58, 0.5);
+            background: rgba(239, 68, 68, 0.1);
             border-color: var(--red);
+            color: var(--red);
         }
 
         .listening-badge {
@@ -518,22 +496,19 @@
         }
 
         .ring-1 {
-            border-color: rgba(0, 255, 213, 0.4);
-            box-shadow: 0 0 20px rgba(0, 255, 213, 0.2);
+            border-color: rgba(59, 130, 246, 0.5);
             animation: spin 10s linear infinite;
         }
 
         .ring-2 {
             inset: 20px;
-            border-color: rgba(191, 90, 242, 0.4);
-            box-shadow: 0 0 20px rgba(191, 90, 242, 0.2);
+            border-color: rgba(99, 102, 241, 0.4);
             animation: spin 14s linear infinite reverse;
         }
 
         .ring-3 {
             inset: 40px;
-            border-color: rgba(10, 132, 255, 0.4);
-            box-shadow: 0 0 20px rgba(10, 132, 255, 0.2);
+            border-color: rgba(52, 211, 153, 0.4);
             animation: spin 8s linear infinite;
         }
 
@@ -552,14 +527,11 @@
             inset: 60px;
             border-radius: 50%;
             background: radial-gradient(circle at 30% 30%,
-                    rgba(0, 255, 213, 0.5),
-                    rgba(191, 90, 242, 0.4) 40%,
-                    rgba(10, 132, 255, 0.3) 70%,
-                    rgba(0, 0, 0, 0.9));
-            box-shadow:
-                0 0 60px rgba(0, 255, 213, 0.5),
-                0 0 120px rgba(191, 90, 242, 0.3),
-                inset 0 0 40px rgba(255, 255, 255, 0.1);
+                    rgba(147, 197, 253, 0.9),
+                    rgba(165, 180, 252, 0.8) 40%,
+                    rgba(52, 211, 153, 0.4) 70%,
+                    rgba(219, 234, 254, 0.5));
+            box-shadow: 0 0 50px rgba(59, 130, 246, 0.4), 0 0 100px rgba(99, 102, 241, 0.2), inset 0 0 30px rgba(255, 255, 255, 0.5);
             animation: idleGlow 6s ease-in-out infinite;
         }
 
@@ -575,7 +547,7 @@
             }
 
             50% {
-                transform: scale(1.02);
+                transform: scale(1.03);
             }
         }
 
@@ -584,12 +556,12 @@
             0%,
             100% {
                 transform: scale(1);
-                box-shadow: 0 0 60px rgba(0, 255, 213, 0.5);
+                box-shadow: 0 0 50px rgba(59, 130, 246, 0.4);
             }
 
             50% {
-                transform: scale(1.08);
-                box-shadow: 0 0 100px rgba(0, 255, 213, 0.8), 0 0 150px rgba(191, 90, 242, 0.5);
+                transform: scale(1.1);
+                box-shadow: 0 0 90px rgba(59, 130, 246, 0.7), 0 0 140px rgba(99, 102, 241, 0.4);
             }
         }
 
@@ -610,9 +582,8 @@
         .waveform span {
             width: 5px;
             height: 8px;
-            background: linear-gradient(180deg, var(--cyan), var(--purple));
+            background: linear-gradient(180deg, #3b82f6, #6366f1);
             border-radius: 3px;
-            box-shadow: 0 0 8px var(--cyan);
             animation: modernWave 1.2s ease-in-out infinite;
         }
 
@@ -735,14 +706,14 @@
         }
 
         .message.ai {
-            background: linear-gradient(135deg, rgba(0, 255, 213, 0.1), rgba(191, 90, 242, 0.1));
-            border: 1px solid rgba(0, 255, 213, 0.2);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(99, 102, 241, 0.08));
+            border: 1px solid rgba(59, 130, 246, 0.15);
             align-self: flex-start;
         }
 
         .message.user {
-            background: rgba(48, 209, 88, 0.1);
-            border: 1px solid rgba(48, 209, 88, 0.2);
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(5, 150, 105, 0.08));
+            border: 1px solid rgba(16, 185, 129, 0.15);
             align-self: flex-end;
         }
 
@@ -787,19 +758,24 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, var(--cyan), var(--blue));
-            color: #000;
+            background: linear-gradient(135deg, #3b82f6, #6366f1);
+            color: white;
+            box-shadow: 0 4px 20px rgba(59, 130, 246, 0.35);
         }
 
         .btn-primary:hover:not(:disabled) {
             transform: translateY(-2px);
-            box-shadow: 0 12px 40px rgba(0, 255, 213, 0.4);
+            box-shadow: 0 8px 32px rgba(59, 130, 246, 0.45);
         }
 
         .btn-secondary {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            color: var(--text);
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--red);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(239, 68, 68, 0.06);
         }
 
         .btn:disabled {
@@ -807,261 +783,221 @@
             cursor: not-allowed;
         }
 
-        /* ============================================
-           RESPONSIVE DESIGN - All Screen Sizes
-           ============================================ */
+        /* ── Mobile Layout (≤768px) ── */
+        @media(max-width: 768px) {
 
-        /* Large Desktop (1200px+) */
-        @media (min-width: 1200px) {
-            .main-content {
-                grid-template-columns: 1fr 1fr 1.2fr;
-            }
-
-            .holo-container {
-                width: 280px;
-                height: 280px;
-            }
-        }
-
-        /* Desktop (1024-1199px) */
-        @media (max-width: 1199px) {
-            .main-content {
-                grid-template-columns: 1fr 1fr 1fr;
-            }
-
-            .holo-container {
-                width: 240px;
-                height: 240px;
-            }
-        }
-
-        /* Tablet Landscape / iPad (769-1024px) */
-        @media (max-width: 1024px) {
-            .main-content {
-                grid-template-columns: 1fr 1fr;
-                grid-template-rows: auto 1fr;
-            }
-
-            .ai-orb-panel {
-                grid-column: span 2;
-            }
-
-            .holo-container {
-                width: 180px;
-                height: 180px;
-            }
-
-            .header {
-                flex-wrap: wrap;
+            .container {
+                padding: 12px;
                 gap: 10px;
-                padding: 12px 16px;
+                grid-template-rows: auto auto 1fr auto;
+                position: relative;
             }
 
-            .controls {
-                display: none;
+            /* Compact header */
+            .header {
+                padding: 8px 12px;
+                border-radius: 14px;
+                background: rgba(255, 255, 255, 0.7);
+                backdrop-filter: blur(20px);
+                border: 1px solid var(--border);
             }
-        }
 
-        /* Tablet Portrait (601-768px) */
-        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 17px;
+            }
+
+            .logo-mark {
+                width: 32px;
+                height: 32px;
+                font-size: 15px;
+            }
+
+            .desktop-chat-footer {
+                display: none !important;
+            }
+
+            /* Conversation fills all remaining space */
             .main-content {
                 grid-template-columns: 1fr;
-                grid-template-rows: auto auto 1fr;
-                gap: 12px;
-                padding: 12px;
+                grid-template-rows: 1fr;
+                gap: 0;
+                position: relative;
             }
 
-            .ai-orb-panel {
-                grid-column: span 1;
-                order: -1;
+            /* Camera: floating PiP top-right */
+            .video-panel {
+                position: fixed;
+                top: 70px;
+                right: 12px;
+                width: 120px;
+                height: 160px;
+                z-index: 100;
+                border-radius: 16px;
+                padding: 0;
+                background: rgba(255, 255, 255, 0.8);
+                backdrop-filter: blur(20px);
+                border: 2px solid rgba(255, 255, 255, 0.9);
+                box-shadow: 0 8px 32px rgba(59, 130, 246, 0.2);
+                overflow: hidden;
             }
 
-            .holo-container {
-                width: 150px;
-                height: 150px;
+            .video-panel .panel-label,
+            .video-panel .panel-footer {
+                display: none !important;
             }
 
             .video-container {
-                max-height: 200px;
-                min-height: 180px;
-            }
-
-            .video-feed {
-                width: 100%;
+                border-radius: 0;
                 height: 100%;
-                object-fit: cover;
-            }
-
-            .header {
-                flex-direction: column;
-                align-items: center;
-                gap: 8px;
-            }
-
-            .controls {
-                display: none;
-            }
-
-            .btn {
-                padding: 10px 20px;
-                font-size: 13px;
-            }
-
-            .chat-panel {
-                max-height: 250px;
-            }
-
-            .message {
-                padding: 10px 14px;
-                font-size: 14px;
-            }
-        }
-
-        /* Mobile Landscape (481-600px) */
-        @media (max-width: 600px) {
-            body {
-                overflow-y: auto;
-            }
-
-            .container {
-                height: auto;
-                min-height: 100vh;
-            }
-
-            .main-content {
-                grid-template-rows: auto auto auto;
-            }
-
-            .holo-container {
-                width: 120px;
-                height: 120px;
-            }
-
-            .ring {
-                border-width: 1px;
-            }
-
-            .header {
-                padding: 10px;
-            }
-
-            .status-badge,
-            .network-indicator {
-                font-size: 11px;
-                padding: 4px 8px;
-            }
-
-            .interview-timer {
-                font-size: 14px;
-            }
-
-            .video-btn {
-                width: 38px;
-                height: 38px;
+                flex: unset;
             }
 
             .video-controls {
-                bottom: 8px;
-            }
-        }
-
-        /* Mobile Portrait (up to 480px) */
-        @media (max-width: 480px) {
-            .main-content {
-                padding: 8px;
-                gap: 8px;
+                bottom: 6px;
+                gap: 6px;
             }
 
-            .glass {
-                padding: 12px;
-                border-radius: 16px;
+            .video-btn {
+                width: 30px;
+                height: 30px;
             }
 
-            .panel-label {
-                font-size: 10px;
+            .video-btn span {
+                font-size: 14px !important;
+            }
+
+            .listening-badge {
+                top: 6px;
+                right: 6px;
+                font-size: 9px;
+                padding: 3px 7px;
+            }
+
+            /* Scale down blobs on mobile */
+            .blob-1 {
+                width: 250px;
+                height: 250px;
+                opacity: 0.3;
+            }
+
+            .blob-2 {
+                width: 200px;
+                height: 200px;
+                opacity: 0.3;
+            }
+
+            .blob-3 {
+                width: 150px;
+                height: 150px;
+                opacity: 0.25;
+            }
+
+            /* AI orb: compact horizontal strip */
+            .ai-orb-panel {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                justify-content: flex-start;
+                gap: 12px;
+                padding: 10px 14px;
+                border-radius: 14px;
+                min-height: unset;
+                height: auto;
+                margin-bottom: 10px;
             }
 
             .holo-container {
-                width: 100px;
-                height: 100px;
+                width: 54px;
+                height: 54px;
+                flex-shrink: 0;
+                margin: 0;
+            }
+
+            .ring-2 {
+                inset: 8px;
+            }
+
+            .ring-3 {
+                inset: 16px;
             }
 
             .ai-orb {
-                width: 50px;
-                height: 50px;
+                inset: 22px;
             }
 
-            .btn {
-                padding: 8px 16px;
-                font-size: 12px;
-                gap: 4px;
+            .ai-name {
+                font-size: 13px;
+                margin-top: 0;
             }
 
-            .controls {
-                display: none;
+            .ai-role {
+                font-size: 11px;
+                margin-top: 1px;
             }
 
-            .theme-toggle {
-                width: 36px;
-                height: 36px;
-                font-size: 18px;
+            .waveform {
+                margin-top: 0;
+                margin-left: auto;
+                height: 24px;
             }
 
-            .video-controls {
-                gap: 8px;
-            }
-
-            .video-btn {
-                width: 34px;
-                height: 34px;
-            }
-
-            .video-container {
-                min-height: 160px;
-            }
-
-            .video-feed {
-                object-fit: cover;
-            }
-
-            .network-bars .bar {
+            .waveform span {
                 width: 3px;
             }
 
-            .chat-panel {
-                max-height: 180px;
-            }
-
-            .message {
-                padding: 8px 12px;
-                font-size: 12px;
-                max-width: 95%;
-            }
-        }
-
-        /* Very Small Mobile (up to 360px) */
-        @media (max-width: 360px) {
-            .header {
-                padding: 8px;
-            }
-
-            .holo-container {
-                width: 80px;
-                height: 80px;
-            }
-
-            .ai-orb {
-                width: 40px;
-                height: 40px;
-            }
-
-            .btn {
-                padding: 6px 12px;
+            .listening-indicator {
+                margin-top: 0;
+                margin-left: auto;
+                padding: 5px 10px;
                 font-size: 11px;
             }
 
-            .interview-timer {
-                font-size: 12px;
+            /* Chat card: fills remaining height, compact buttons at bottom */
+            .chat-panel {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                border-radius: 18px;
+                padding: 14px;
+            }
+
+            .message {
+                max-width: 96%;
+            }
+
+            /* Compact buttons inside chat card */
+            .mobile-chat-footer {
+                display: flex !important;
+                gap: 8px;
+                padding-top: 10px;
+                margin-top: auto;
+                flex-shrink: 0;
+            }
+
+            .mobile-chat-footer .btn {
+                flex: 1;
+                padding: 11px 10px;
+                font-size: 13px;
+                border-radius: 12px;
+            }
+
+            /* Hide desktop Start/End from video panel on mobile */
+            .video-panel .panel-footer {
+                display: none !important;
+            }
+
+            .mobile-btn-bar {
+                display: none !important;
+            }
+
+            /* Footer bar compact */
+            .footer-bar {
+                gap: 14px;
+                padding: 6px 0;
+            }
+
+            .footer-item {
+                font-size: 10px;
             }
         }
 
@@ -1681,9 +1617,10 @@
 </head>
 
 <body>
-    <div class="grid-bg"></div>
-    <canvas id="bgCanvas"></canvas>
-
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+    <div class="dot-grid"></div>
     <!-- Server Startup Loader Overlay -->
     <div class="server-loader-overlay" id="serverLoader">
         <div class="loader-spinner"></div>
@@ -1762,7 +1699,9 @@
     <div class="container">
         <div class="header">
             <div class="header-left">
-                <h1>🎙️ Interview</h1>
+                <div class="logo-mark"><span class="material-symbols-rounded"
+                        style="color:white;font-size:24px;">graphic_eq</span></div>
+                <h1>AI Interview</h1>
             </div>
             <div class="header-right">
                 <div class="network-indicator" id="networkIndicator">
@@ -1774,9 +1713,6 @@
                     </div>
                     <span id="networkSpeed">Checking...</span>
                 </div>
-                <button class="theme-toggle material-symbols-rounded" id="themeToggle" onclick="toggleTheme()">
-                    dark_mode
-                </button>
                 <div class="interview-timer" id="interviewTimer">
                     <span class="timer-icon">⏱️</span>
                     <span id="timerDisplay">30:00</span>
@@ -1805,7 +1741,11 @@
                     </div>
                 </div>
                 <div class="panel-footer">
-                    <button class="btn btn-primary" id="startBtn" onclick="startInterview()">▶️ Start Interview</button>
+                    <button class="btn btn-primary" id="startBtn" onclick="startInterview()">
+                        <span class="material-symbols-rounded"
+                            style="font-size:18px;vertical-align:-4px;margin-right:4px;">play_arrow</span>
+                        Start Interview
+                    </button>
                 </div>
             </div>
 
@@ -1828,11 +1768,22 @@
                 <div class="chat-messages" id="chatMessages">
                     <div class="message ai">
                         <div class="message-label">AI Interviewer</div>
-                        <div>Click "Start Interview" to begin</div>
+                        <div>Welcome! When you're ready, click <strong>Start Interview</strong> to begin. Make sure your
+                            camera, microphone and screen sharing are enabled.</div>
                     </div>
                 </div>
-                <div class="panel-footer">
-                    <button class="btn btn-secondary" id="stopBtn" onclick="stopInterview()" disabled>⏹️ End
+                <!-- Desktop footer -->
+                <div class="panel-footer desktop-chat-footer">
+                    <button class="btn btn-secondary" id="stopBtn" onclick="stopInterview()" disabled>
+                        <span class="material-symbols-rounded"
+                            style="font-size:18px;vertical-align:-4px;margin-right:4px;">stop</span>
+                        End Interview
+                    </button>
+                </div>
+                <!-- Mobile footer -->
+                <div class="mobile-chat-footer" style="display:none">
+                    <button class="btn btn-primary" onclick="startInterview()">Start Interview</button>
+                    <button class="btn btn-secondary" id="stopBtnMobile" onclick="stopInterview()" disabled>End
                         Interview</button>
                 </div>
             </div>
@@ -1863,31 +1814,6 @@
             osc.start(clickAudioCtx.currentTime);
             osc.stop(clickAudioCtx.currentTime + 0.15);
         }
-
-        // Theme Toggle
-        function toggleTheme() {
-            const body = document.body;
-            const btn = document.getElementById('themeToggle');
-            const isLight = body.dataset.theme === 'light';
-
-            body.dataset.theme = isLight ? '' : 'light';
-            btn.textContent = isLight ? 'dark_mode' : 'light_mode';
-            localStorage.setItem('theme', body.dataset.theme);
-
-            // Update particles for new theme - animation star
-            if (window.particleSystem) {
-                window.particleSystem.updateTheme();
-            }
-        }
-
-        // Load saved theme
-        (function () {
-            const saved = localStorage.getItem('theme');
-            if (saved === 'light') {
-                document.body.dataset.theme = 'light';
-                document.getElementById('themeToggle').textContent = 'light_mode';
-            }
-        })();
 
         // Network Monitoring
         let networkQuality = 'good';
@@ -2022,98 +1948,7 @@
         // ═══════════════════════════════════════════════════
         // CENTRALIZED LOGGING
         // ═══════════════════════════════════════════════════
-        // Initialize Particle System
-        window.addEventListener('load', () => {
-            window.particleSystem = new ParticleSystem();
-        });
 
-        class ParticleSystem {
-            constructor() {
-                this.canvas = document.getElementById('bgCanvas');
-                this.ctx = this.canvas.getContext('2d');
-                this.particles = [];
-                this.resize();
-                window.addEventListener('resize', () => this.resize());
-                this.animate();
-            }
-
-            resize() {
-                this.canvas.width = window.innerWidth;
-                this.canvas.height = window.innerHeight;
-                this.initParticles();
-            }
-
-            initParticles() {
-                this.particles = [];
-                const isLight = document.body.dataset.theme === 'light';
-                const count = isLight ? 60 : 100; // Fewer particles for day mode
-                for (let i = 0; i < count; i++) {
-                    this.particles.push(new Particle(this.canvas, isLight));
-                }
-            }
-
-            updateTheme() {
-                this.initParticles();
-            }
-
-            animate() {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.particles.forEach(p => {
-                    p.update();
-                    p.draw(this.ctx);
-                });
-                requestAnimationFrame(() => this.animate());
-            }
-        }
-
-        class Particle {
-            constructor(canvas, isLight) {
-                this.canvas = canvas;
-                this.isLight = isLight;
-                this.reset();
-            }
-
-            reset() {
-                this.x = Math.random() * this.canvas.width;
-                this.y = Math.random() * this.canvas.height;
-                this.size = Math.random() * (this.isLight ? 4 : 2) + 0.5; // Bigger soft circles for day
-                this.speedX = (Math.random() - 0.5) * 0.5;
-                this.speedY = (Math.random() - 0.5) * 0.5;
-                this.opacity = Math.random() * 0.5 + 0.2;
-
-                // Colors
-                if (this.isLight) {
-                    // Day: Blue/Cyan/White soft mix
-                    const colors = ['rgba(59, 130, 246, ', 'rgba(14, 165, 233, ', 'rgba(255, 255, 255, '];
-                    this.colorPrefix = colors[Math.floor(Math.random() * colors.length)];
-                    this.speedY = Math.random() * -0.5 - 0.2; // Float up slightly
-                } else {
-                    // Night: White stars
-                    this.colorPrefix = 'rgba(255, 255, 255, ';
-                }
-            }
-
-            update() {
-                this.x += this.speedX;
-                this.y += this.speedY;
-
-                if (this.x < 0 || this.x > this.canvas.width || this.y < 0 || this.y > this.canvas.height) {
-                    this.reset();
-                }
-
-                // Twinkle effect
-                this.opacity += (Math.random() - 0.5) * 0.02;
-                if (this.opacity < 0.1) this.opacity = 0.1;
-                if (this.opacity > 0.8) this.opacity = 0.8;
-            }
-
-            draw(ctx) {
-                ctx.fillStyle = this.colorPrefix + this.opacity + ')';
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
 
         class Logger {
             static async log(level, message, context = {}) {
@@ -2751,44 +2586,27 @@ registerProcessor('pcm-processor', PCMProcessor);
             const urlParams = new URLSearchParams(window.location.search);
 
             sessionMetadata = {
-                assessmentId: urlParams.get('assessment_id'),
-                assessmentResultId: urlParams.get('assessment_result_id'),
-                userId: urlParams.get('user_id'),
-                videoToken: urlParams.get('video_token'),
+                assessmentId: urlParams.get('assessment_id') || 'demo_assessment',
+                assessmentResultId: urlParams.get('assessment_result_id') || 'demo_result',
+                userId: urlParams.get('user_id') || 'demo_user',
+                videoToken: urlParams.get('video_token') || 'demo_token',
                 language: urlParams.get('language') || 'english',
-                enterpriseId: urlParams.get('enterprise_id') || ''
+                enterpriseId: urlParams.get('enterprise_id') || 'demo_enterprise'
             };
 
             console.log('📊 Session Metadata:', sessionMetadata);
-
-            if (!sessionMetadata.assessmentId || !sessionMetadata.userId) {
-                console.error('❌ Missing required URL parameters!');
-                alert('Invalid interview link. Please use the correct link provided by the recruiter.');
-                return false;
-            }
-
             Logger.log('info', 'Session initialized from URL', sessionMetadata);
             return true;
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            const validParams = parseURLParameters();
-            if (!validParams) {
-                document.getElementById('startBtn').disabled = true;
-                document.getElementById('startBtn').textContent = '❌ Invalid Link';
-            }
+            parseURLParameters();
         });
 
 
         async function startInterview() {
             if (isActive) return;
             playClickSound('start');
-
-            // Validate session metadata
-            if (!sessionMetadata.assessmentId || !sessionMetadata.userId) {
-                alert('Session parameters missing. Please use the correct interview link.');
-                return;
-            }
 
             document.getElementById('startBtn').disabled = true;
             updateStatus('Checking server...', false);
