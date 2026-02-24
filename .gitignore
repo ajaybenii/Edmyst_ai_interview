@@ -42,3 +42,4 @@ logs/
 .pytest_cache/
 .coverage
 htmlcov/
+Frontend/design3.html
