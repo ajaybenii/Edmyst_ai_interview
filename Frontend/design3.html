@@ -10,8 +10,10 @@
         href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap"
         rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded" rel="stylesheet">
-    <!-- rrweb for mobile recording -->
-    <script src="https://cdn.jsdelivr.net/npm/rrweb@2.0.0-alpha.11/dist/rrweb.min.js"></script>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <style>
         * {
             margin: 0;
@@ -76,47 +78,6 @@
             z-index: 2;
             background: linear-gradient(180deg, var(--accent-light), var(--accent), var(--accent2));
             border-radius: 0 2px 2px 0;
-        }
-
-        /* Strict Security Blocker Settings */
-        .security-blocker {
-            position: fixed;
-            inset: 0;
-            background: rgba(10, 15, 12, 0.95);
-            backdrop-filter: blur(10px);
-            z-index: 9999;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            opacity: 0;
-            pointer-events: none;
-            transition: opacity 0.3s;
-            text-align: center;
-            padding: 20px;
-        }
-
-        .security-blocker.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .security-blocker .icon {
-            font-size: 64px;
-            color: var(--amber);
-            margin-bottom: 20px;
-        }
-
-        .security-blocker h2 {
-            font-size: 24px;
-            margin-bottom: 15px;
-        }
-
-        .security-blocker p {
-            color: rgba(255, 255, 255, 0.7);
-            max-width: 400px;
-            margin-bottom: 30px;
         }
 
         .container {
@@ -336,11 +297,14 @@
             flex: 1;
             /* Takes exactly half the width */
             min-width: 0;
-            /* Prevents overflow */
+            min-height: 0;
+            /* Prevents vertical bounds overflow */
         }
 
         .left-column>.glass {
             flex: 1;
+            min-height: 0;
+            /* Allows shrink */
         }
 
         .glass {
@@ -390,7 +354,10 @@
         .video-feed {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            /* Unzoom camera view */
+            background-color: #000;
+            /* Add black bars for aspect ratio diff */
             transform: scaleX(-1);
         }
 
@@ -459,98 +426,51 @@
             animation: pulseGlow 1.5s infinite;
         }
 
-        /* AI Panel */
+        /* AI Panel - Dark Space Theme */
         .ai-orb-panel {
             align-items: center;
             justify-content: center;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 250px;
+            background: radial-gradient(circle at center, #111418 0%, #050608 100%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Ensure text pops on the dark background */
+        .ai-orb-panel .panel-label,
+        .ai-orb-panel .ai-name,
+        .ai-orb-panel .ai-role {
+            color: rgba(255, 255, 255, 0.9);
+            z-index: 2;
+        }
+
+        .ai-orb-panel .listening-indicator {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.2);
+            z-index: 2;
         }
 
         .holo-container {
             position: relative;
-            width: 200px;
-            height: 200px;
+            width: 100%;
+            height: 220px;
             margin: 0 auto;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
         }
 
-        /* Forest ring design */
-        .ring {
-            position: absolute;
-            border-radius: 50%;
-            border: 1.5px solid;
-        }
-
-        .ring-1 {
-            inset: 0;
-            border-color: rgba(45, 106, 79, 0.3);
-            animation: spin 12s linear infinite;
-        }
-
-        .ring-2 {
-            inset: 18px;
-            border-color: rgba(82, 183, 136, 0.25);
-            animation: spin 16s linear infinite reverse;
-        }
-
-        .ring-3 {
-            inset: 36px;
-            border-color: rgba(116, 198, 157, 0.2);
-            animation: spin 9s linear infinite;
-        }
-
-        @keyframes spin {
-            from {
-                transform: rotate(0deg)
-            }
-
-            to {
-                transform: rotate(360deg)
-            }
-        }
-
-        .ai-orb {
-            position: absolute;
-            inset: 54px;
-            border-radius: 50%;
-            background: radial-gradient(circle at 35% 30%,
-                    rgba(178, 230, 201, 1),
-                    rgba(116, 198, 157, 0.85) 40%,
-                    rgba(45, 106, 79, 0.7) 70%,
-                    rgba(28, 43, 26, 0.4));
-            box-shadow:
-                0 0 50px rgba(82, 183, 136, 0.4),
-                0 0 100px rgba(45, 106, 79, 0.15),
-                inset 0 4px 20px rgba(255, 255, 255, 0.4);
-            animation: idleGlow 6s ease-in-out infinite;
-        }
-
-        .ai-orb.speaking {
-            animation: speakPulse 1.1s ease-in-out infinite;
-        }
-
-        @keyframes idleGlow {
-
-            0%,
-            100% {
-                transform: scale(1)
-            }
-
-            50% {
-                transform: scale(1.04)
-            }
-        }
-
-        @keyframes speakPulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-                box-shadow: 0 0 50px rgba(82, 183, 136, 0.4)
-            }
-
-            50% {
-                transform: scale(1.12);
-                box-shadow: 0 0 90px rgba(82, 183, 136, 0.7), 0 0 140px rgba(45, 106, 79, 0.3)
-            }
+        #aiCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .ai-name {
@@ -798,9 +718,7 @@
         }
 
         /* Overlays */
-        .fullscreen-prompt-overlay,
         .screenshare-warning-overlay,
-        .fullscreen-warning-overlay,
         .completion-overlay,
         .server-loader-overlay {
             display: flex;
@@ -813,17 +731,19 @@
             justify-content: center;
         }
 
-        .fullscreen-prompt-overlay,
+        .screenshare-warning-overlay:not(.active),
+        .completion-overlay:not(.active),
+        .server-loader-overlay:not(.active) {
+            display: none;
+        }
+
         .screenshare-warning-overlay,
-        .fullscreen-warning-overlay,
         .completion-overlay,
         .server-loader-overlay {
             display: none;
         }
 
-        .fullscreen-prompt-overlay.active,
         .screenshare-warning-overlay.active,
-        .fullscreen-warning-overlay.active,
         .completion-overlay.active,
         .server-loader-overlay.active {
             display: flex;
@@ -887,54 +807,81 @@
         }
 
         @media(max-width:900px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .header-right {
+                width: 100%;
+                justify-content: space-between;
+            }
+
             .left-column {
                 flex: none;
+                /* Allow exact sizing */
             }
 
             .main-content {
                 flex-direction: column;
                 overflow-y: auto;
+                position: relative;
             }
 
-            .ai-orb-panel {
+            /* Camera PIP Mode */
+            #videoPanel {
+                position: absolute;
+                top: 0;
+                right: 0;
+                width: 130px;
+                height: 170px;
+                z-index: 100;
+                padding: 6px;
+                border: 2px solid rgba(82, 183, 136, 0.4);
+                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            }
+
+            #videoPanel .panel-label {
                 display: none;
+                /* Hide 'Your Camera' label in PIP */
+            }
+
+            #videoPanel .video-controls {
+                transform: scale(0.65) translateX(-76%);
+                bottom: 2px;
+                gap: 2px;
+            }
+
+            #videoPanel .listening-badge {
+                transform: scale(0.7);
+                top: 2px;
+                right: 2px;
+                padding: 2px 6px;
+            }
+
+            /* AI Orb Panel adjustments */
+            #aiOrbPanel {
+                min-height: 240px;
+                margin-bottom: 0px;
+                border-bottom-left-radius: 0;
+                border-bottom-right-radius: 0;
+                border-bottom: none;
+            }
+
+            /* Conversation matches Orb */
+            #chatPanel {
+                border-top-left-radius: 0;
+                border-top-right-radius: 0;
             }
         }
     </style>
 </head>
 
 <body>
-    <!-- Fullscreen Security Blocker -->
-    <div class="security-blocker" id="fullscreenBlocker">
-        <span class="material-symbols-rounded icon">fullscreen</span>
-        <h2>Fullscreen Required</h2>
-        <p>This interview must be taken in fullscreen mode to ensure a secure environment. Please return to fullscreen
-            to continue.</p>
-        <button class="btn btn-primary" onclick="requestFullscreenAndResume()">Return to Fullscreen</button>
-    </div>
-
-    <!-- Tab Switch Warning -->
-    <div class="security-blocker" id="tabWarningBlocker">
-        <span class="material-symbols-rounded icon" style="color: var(--red);">warning</span>
-        <h2>Focus Lost</h2>
-        <p>You navigated away from the interview screen. This action has been recorded. Please stay on this screen.</p>
-        <button class="btn btn-primary" onclick="dismissTabWarning()">Acknowledge & Return</button>
-    </div>
-
     <div class="bg-texture"></div>
     <div class="noise"></div>
     <div class="accent-stripe"></div>
 
-    <!-- Fullscreen Prompt -->
-    <div class="fullscreen-prompt-overlay" id="fullscreenPrompt">
-        <div class="overlay-card">
-            <div class="overlay-icon">🖥️</div>
-            <div class="overlay-title">Enter Fullscreen Mode</div>
-            <div class="overlay-msg">For the best interview experience and to ensure integrity, please switch to
-                fullscreen mode before starting.</div>
-            <button class="overlay-btn" onclick="enterFullscreenFromPrompt()">🚀 Enter Fullscreen</button>
-        </div>
-    </div>
     <div class="screenshare-warning-overlay" id="screenshareWarning">
         <div class="overlay-card">
             <div class="overlay-icon">📹</div>
@@ -942,14 +889,6 @@
             <div class="overlay-msg">Screen sharing is mandatory to start the interview. Please allow it when prompted.
             </div>
             <button class="overlay-btn danger" onclick="dismissScreenShareWarning()">Got it</button>
-        </div>
-    </div>
-    <div class="fullscreen-warning-overlay" id="fullscreenWarning">
-        <div class="overlay-card">
-            <div class="overlay-icon">⚠️</div>
-            <div class="overlay-title">Fullscreen Required</div>
-            <div class="overlay-msg">You've exited fullscreen. Please return to continue your interview.</div>
-            <button class="overlay-btn" onclick="returnToFullscreen()">🔒 Return to Fullscreen</button>
         </div>
     </div>
     <div class="completion-overlay" id="completionOverlay">
@@ -1021,10 +960,8 @@
                     <div class="panel-label" style="justify-content:center"><span class="dot"></span><span>AI
                             Interviewer</span></div>
                     <div class="holo-container">
-                        <div class="ring ring-1"></div>
-                        <div class="ring ring-2"></div>
-                        <div class="ring ring-3"></div>
-                        <div class="ai-orb" id="aiOrb"></div>
+                        <!-- Three.js Canvas injected here -->
+                        <canvas id="aiCanvas"></canvas>
                     </div>
                     <div class="ai-name">Edmyst AI</div>
                     <div class="ai-role">Professional Interviewer</div>

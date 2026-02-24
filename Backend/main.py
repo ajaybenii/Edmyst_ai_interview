@@ -375,6 +375,13 @@ async def relay_messages(ws_client: WebSocket, ws_google, access_token: str, dyn
                 if gemini["swapping"]:
                     continue
                 
+                # ✅ Filter out frontend-only control messages (not valid Gemini API messages)
+                # Gemini only accepts: realtimeInput, clientContent, toolResponse, etc.
+                if 'type' in data:
+                    msg_type = data.get('type')
+                    logger.info(f"Frontend control message intercepted (not forwarded to Gemini): type={msg_type}")
+                    continue  # Don't forward to Gemini
+                
                 # Logging (only in debug mode)
                 if 'realtimeInput' in data:
                     audio_chunk_count += 1
