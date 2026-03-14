@@ -16,10 +16,23 @@ from pathlib import Path
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from pydantic import BaseModel
+from pymongo import MongoClient
 
 load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).parent
+
+# MongoDB Connection — environment-aware (Dev / Stage / Prod)
+APP_ENV = os.getenv("APP_ENV", "Dev")  # Dev | Stage | Prod
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client[APP_ENV]  # Selects Dev, Stage, or Prod database
+    assessments_collection = db["assessments"]
+    logging.getLogger(__name__).info(f"MongoDB connected to '{APP_ENV}' database")
+except Exception as e:
+    logging.getLogger(__name__).error(f"MongoDB connection failed: {e}")
+    assessments_collection = None
 
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -511,17 +524,28 @@ async def root():
     }
 
 # UI Configuration endpoint — fetches branding per assessment
-# TODO: Connect to MongoDB assessments collection in production
 @app.get("/api/config/{assessment_id}")
 async def get_config(assessment_id: str):
     """Get UI configuration (organization name & logo) for a specific assessment."""
-    # In production, query: assessments_collection.find_one({"_id": assessment_id})
-    # and enterprises_collection for the logo URL.
-    # For now, return sensible defaults:
-    return {
+    defaults = {
         "top_right_logo_url": None,
         "organization_name": "HR Team"
     }
+    
+    if not assessments_collection:
+        return defaults
+    
+    try:
+        assessment = assessments_collection.find_one(
+            {"_id": assessment_id},
+            {"organization": 1, "_id": 0}
+        )
+        if assessment and assessment.get("organization"):
+            defaults["organization_name"] = assessment["organization"]
+    except Exception as e:
+        logger.warning(f"Failed to fetch assessment config: {e}")
+    
+    return defaults
 
 @app.get("/health")
 async def health_check():
