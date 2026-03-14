@@ -529,19 +529,22 @@ async def get_config(assessment_id: str):
     """Get UI configuration (organization name & logo) for a specific assessment."""
     defaults = {
         "top_right_logo_url": None,
-        "organization_name": "HR Team"
+        "organization_name": "Edmyst AI"
     }
     
-    if not assessments_collection:
+    if assessments_collection is None:
         return defaults
     
     try:
         assessment = assessments_collection.find_one(
             {"_id": assessment_id},
-            {"organization": 1, "_id": 0}
+            {"organization": 1, "organization_logo": 1, "_id": 0}
         )
-        if assessment and assessment.get("organization"):
-            defaults["organization_name"] = assessment["organization"]
+        if assessment:
+            if assessment.get("organization"):
+                defaults["organization_name"] = assessment["organization"]
+            if assessment.get("organization_logo"):
+                defaults["top_right_logo_url"] = assessment["organization_logo"]
     except Exception as e:
         logger.warning(f"Failed to fetch assessment config: {e}")
     
