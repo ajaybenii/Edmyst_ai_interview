@@ -384,7 +384,7 @@ async def relay_messages(ws_client: WebSocket, ws_google, access_token: str, dyn
                 
                 # Logging (only in debug mode)
                 if 'realtimeInput' in data:
-                    audio_chunk_count += 1
+                    audio_chunk_count += 1  # type: ignore
                     if audio_chunk_count % 100 == 0:
                         logger.debug(f"Media chunks sent: {audio_chunk_count}")
                 else:
@@ -407,8 +407,8 @@ async def relay_messages(ws_client: WebSocket, ws_google, access_token: str, dyn
         while True:
             try:
                 current_ws = gemini["ws"]
-                async for message in current_ws:
-                    msg_count += 1
+                async for message in current_ws:  # type: ignore
+                    msg_count += 1  # type: ignore
                     data = json.loads(message.decode('utf-8'))
                     
                     # Handle session resumption updates
@@ -510,6 +510,19 @@ async def root():
         **stats
     }
 
+# UI Configuration endpoint — fetches branding per assessment
+# TODO: Connect to MongoDB assessments collection in production
+@app.get("/api/config/{assessment_id}")
+async def get_config(assessment_id: str):
+    """Get UI configuration (organization name & logo) for a specific assessment."""
+    # In production, query: assessments_collection.find_one({"_id": assessment_id})
+    # and enterprises_collection for the logo URL.
+    # For now, return sensible defaults:
+    return {
+        "top_right_logo_url": None,
+        "organization_name": "HR Team"
+    }
+
 @app.get("/health")
 async def health_check():
     """Health check for monitoring and load balancers"""
@@ -529,7 +542,7 @@ async def get_stats():
     stats = manager.get_stats()
     return {
         **stats,
-        "recent_activity": list(manager.connection_history)[-20:],
+        "recent_activity": list(manager.connection_history)[-20:],  # type: ignore
         "configuration": {
             "max_concurrent_connections": MAX_CONCURRENT_CONNECTIONS,
             "connection_timeout": CONNECTION_TIMEOUT,
