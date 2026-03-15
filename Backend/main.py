@@ -527,7 +527,7 @@ async def root():
 
 # UI Configuration endpoint — fetches branding per session
 @app.get("/api/config")
-async def get_config(user_id: str, video_token: str):
+async def get_config(user_id: str, video_token: str, debug: bool = False):
     """Get UI configuration for a specific candidate session."""
     defaults = {
         "top_right_logo_url": None,
@@ -535,30 +535,65 @@ async def get_config(user_id: str, video_token: str):
         "assessment_id": None,
         "assessment_result_id": None
     }
+    debug_info = {
+        "app_env": APP_ENV,
+        "mongo_uri_configured": bool(MONGO_URI),
+        "collections_available": assessments_collection is not None and assessment_results_collection is not None,
+        "lookup": {
+            "video_token": video_token,
+            "user_id": user_id,
+            "matching_fields": ["enterprise_id", "user_id"]
+        },
+        "session_found": False,
+        "assessment_found": False,
+        "fallback_reason": None
+    }
     
     if assessments_collection is None or assessment_results_collection is None:
+        debug_info["fallback_reason"] = "mongo_collections_unavailable"
+        logger.warning(
+            "Config fallback: Mongo collections unavailable | env=%s user_id=%s video_token=%s",
+            APP_ENV,
+            user_id,
+            video_token
+        )
+        if debug:
+            defaults["_debug"] = debug_info
         return defaults
     
     try:
         # Step 1: Lookup the assessment_results row using video_token and user_id (which acts as enterprise_id)
-        session = assessment_results_collection.find_one({
+        session_query = {
             "video_token": video_token,
             "$or": [
                 {"enterprise_id": user_id},
                 {"user_id": user_id}
             ]
-        })
+        }
+        session = assessment_results_collection.find_one(session_query)
         
         if not session:
-            logger.warning(f"No session found for video_token={video_token}, user_id={user_id}")
+            debug_info["fallback_reason"] = "assessment_result_not_found"
+            logger.warning(
+                "Config fallback: assessment_result not found | env=%s user_id=%s video_token=%s query=%s",
+                APP_ENV,
+                user_id,
+                video_token,
+                session_query
+            )
+            if debug:
+                defaults["_debug"] = debug_info
             return defaults
-            
+
+        debug_info["session_found"] = True
         real_assessment_id = session.get("assessment_id")
         assessment_result_id = str(session.get("_id"))
-        
+
         defaults["assessment_id"] = real_assessment_id
         defaults["assessment_result_id"] = assessment_result_id
-        
+        debug_info["assessment_result_id"] = assessment_result_id
+        debug_info["resolved_assessment_id"] = str(real_assessment_id) if real_assessment_id is not None else None
+
         if real_assessment_id:
             # Step 2: Lookup the actual assessment definition
             assessment = assessments_collection.find_one(
@@ -566,12 +601,63 @@ async def get_config(user_id: str, video_token: str):
                 {"organization": 1, "organization_logo": 1, "_id": 0}
             )
             if assessment:
+                debug_info["assessment_found"] = True
                 if assessment.get("organization"):
                     defaults["organization_name"] = assessment["organization"]
                 if assessment.get("organization_logo"):
                     defaults["top_right_logo_url"] = assessment["organization_logo"]
+
+                missing_fields = []
+                if not assessment.get("organization"):
+                    missing_fields.append("organization")
+                if not assessment.get("organization_logo"):
+                    missing_fields.append("organization_logo")
+
+                if missing_fields:
+                    debug_info["fallback_reason"] = f"assessment_missing_fields:{','.join(missing_fields)}"
+                    logger.warning(
+                        "Config partial fallback: assessment missing fields | env=%s assessment_id=%s missing=%s",
+                        APP_ENV,
+                        real_assessment_id,
+                        ",".join(missing_fields)
+                    )
+                else:
+                    logger.info(
+                        "Config resolved successfully | env=%s assessment_result_id=%s assessment_id=%s organization=%s has_logo=%s",
+                        APP_ENV,
+                        assessment_result_id,
+                        real_assessment_id,
+                        defaults["organization_name"],
+                        bool(defaults["top_right_logo_url"])
+                    )
+            else:
+                debug_info["fallback_reason"] = "assessment_not_found"
+                logger.warning(
+                    "Config fallback: assessment not found | env=%s assessment_id=%s assessment_result_id=%s",
+                    APP_ENV,
+                    real_assessment_id,
+                    assessment_result_id
+                )
+        else:
+            debug_info["fallback_reason"] = "session_missing_assessment_id"
+            logger.warning(
+                "Config fallback: session missing assessment_id | env=%s assessment_result_id=%s user_id=%s",
+                APP_ENV,
+                assessment_result_id,
+                user_id
+            )
     except Exception as e:
-        logger.warning(f"Failed to fetch assessment config: {e}")
+        debug_info["fallback_reason"] = "exception"
+        debug_info["error"] = str(e)
+        logger.exception(
+            "Failed to fetch assessment config | env=%s user_id=%s video_token=%s",
+            APP_ENV,
+            user_id,
+            video_token
+        )
+
+    if debug:
+        defaults["_debug"] = debug_info
     
     return defaults
 
