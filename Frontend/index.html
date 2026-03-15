@@ -2200,10 +2200,20 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         async function fetchUIConfig() {
             try {
-                const assessmentId = sessionMetadata.assessmentId || 'dummy_assessment_123';
-                const response = await fetch(`${API_BASE}/api/config/${assessmentId}`);
+                const userId = sessionMetadata.userId || 'dummy_user_789';
+                const videoToken = sessionMetadata.videoToken || 'dummy_token';
+                
+                const response = await fetch(`${API_BASE}/api/config?user_id=${userId}&video_token=${videoToken}`);
                 if (!response.ok) return;
                 const config = await response.json();
+                
+                // Save resolved IDs back to session metadata for WebSocket connection later
+                if (config.assessment_id) {
+                    sessionMetadata.assessmentId = config.assessment_id;
+                }
+                if (config.assessment_result_id) {
+                    sessionMetadata.assessmentResultId = config.assessment_result_id;
+                }
                 
                 if (config.organization_name) {
                     const subtitleName = document.getElementById('brandSubtitleName');

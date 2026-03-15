@@ -29,10 +29,12 @@ try:
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client[APP_ENV]  # Selects Dev, Stage, or Prod database
     assessments_collection = db["assessments"]
+    assessment_results_collection = db["assessment_results"]
     logging.getLogger(__name__).info(f"MongoDB connected to '{APP_ENV}' database")
 except Exception as e:
     logging.getLogger(__name__).error(f"MongoDB connection failed: {e}")
     assessments_collection = None
+    assessment_results_collection = None
 
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -523,28 +525,51 @@ async def root():
         **stats
     }
 
-# UI Configuration endpoint — fetches branding per assessment
-@app.get("/api/config/{assessment_id}")
-async def get_config(assessment_id: str):
-    """Get UI configuration (organization name & logo) for a specific assessment."""
+# UI Configuration endpoint — fetches branding per session
+@app.get("/api/config")
+async def get_config(user_id: str, video_token: str):
+    """Get UI configuration for a specific candidate session."""
     defaults = {
         "top_right_logo_url": None,
-        "organization_name": "Edmyst AI"
+        "organization_name": "Edmyst AI",
+        "assessment_id": None,
+        "assessment_result_id": None
     }
     
-    if assessments_collection is None:
+    if assessments_collection is None or assessment_results_collection is None:
         return defaults
     
     try:
-        assessment = assessments_collection.find_one(
-            {"_id": assessment_id},
-            {"organization": 1, "organization_logo": 1, "_id": 0}
-        )
-        if assessment:
-            if assessment.get("organization"):
-                defaults["organization_name"] = assessment["organization"]
-            if assessment.get("organization_logo"):
-                defaults["top_right_logo_url"] = assessment["organization_logo"]
+        # Step 1: Lookup the assessment_results row using video_token and user_id (which acts as enterprise_id)
+        session = assessment_results_collection.find_one({
+            "video_token": video_token,
+            "$or": [
+                {"enterprise_id": user_id},
+                {"user_id": user_id}
+            ]
+        })
+        
+        if not session:
+            logger.warning(f"No session found for video_token={video_token}, user_id={user_id}")
+            return defaults
+            
+        real_assessment_id = session.get("assessment_id")
+        assessment_result_id = str(session.get("_id"))
+        
+        defaults["assessment_id"] = real_assessment_id
+        defaults["assessment_result_id"] = assessment_result_id
+        
+        if real_assessment_id:
+            # Step 2: Lookup the actual assessment definition
+            assessment = assessments_collection.find_one(
+                {"_id": real_assessment_id},
+                {"organization": 1, "organization_logo": 1, "_id": 0}
+            )
+            if assessment:
+                if assessment.get("organization"):
+                    defaults["organization_name"] = assessment["organization"]
+                if assessment.get("organization_logo"):
+                    defaults["top_right_logo_url"] = assessment["organization_logo"]
     except Exception as e:
         logger.warning(f"Failed to fetch assessment config: {e}")
     
