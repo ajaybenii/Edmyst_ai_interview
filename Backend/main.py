@@ -31,33 +31,56 @@ SSH_TUNNEL_HOST = os.getenv("SSH_TUNNEL_HOST")
 SSH_TUNNEL_KEY_PATH = os.getenv("SSH_TUNNEL_KEY_PATH")
 DOCDB_HOST = os.getenv("DOCDB_HOST", "edy-db2.cluster-cgnihey3q7y5.us-east-1.docdb.amazonaws.com")
 
-try:
-    if SSH_TUNNEL_HOST and SSH_TUNNEL_KEY_PATH:
-        logging.getLogger(__name__).info(f"Starting SSH Tunnel to {SSH_TUNNEL_HOST}...")
-        from sshtunnel import SSHTunnelForwarder
-        tunnel = SSHTunnelForwarder(
-            (SSH_TUNNEL_HOST, 22),
-            ssh_username="ec2-user",
-            ssh_pkey=SSH_TUNNEL_KEY_PATH,
-            remote_bind_address=(DOCDB_HOST, 27017)
-        )
-        tunnel.start()
-        
-        # Rewrite MONGO_URI to use the local tunnel port and ignore hostname mismatch
-        MONGO_URI = MONGO_URI.replace(f"{DOCDB_HOST}:27017", f"127.0.0.1:{tunnel.local_bind_port}")
-        if "tlsAllowInvalidHostnames=true" not in MONGO_URI:
-            MONGO_URI += "&tlsAllowInvalidHostnames=true"
-        logging.getLogger(__name__).info(f"SSH Tunnel active. Local port: {tunnel.local_bind_port}")
+# --- STARTUP DIAGNOSTICS (print so they show in Render logs before logging is configured) ---
+print(f"[STARTUP] APP_ENV={APP_ENV}")
+print(f"[STARTUP] MONGO_URI configured: {bool(MONGO_URI)}")
+print(f"[STARTUP] SSH_TUNNEL_HOST={SSH_TUNNEL_HOST}")
+print(f"[STARTUP] SSH_TUNNEL_KEY_PATH={SSH_TUNNEL_KEY_PATH}")
+print(f"[STARTUP] DOCDB_HOST={DOCDB_HOST}")
 
-    mongo_client = MongoClient(MONGO_URI)
-    db = mongo_client[APP_ENV]  # Selects Dev, Stage, or Prod database
-    assessments_collection = db["assessments"]
-    assessment_results_collection = db["assessment_results"]
-    logging.getLogger(__name__).info(f"MongoDB connected to '{APP_ENV}' database")
-except Exception as e:
-    logging.getLogger(__name__).error(f"MongoDB connection failed: {e}")
-    assessments_collection = None
-    assessment_results_collection = None
+# Mongo client placeholders — initialized in init_mongo() after logging is ready
+mongo_client = None
+assessments_collection = None
+assessment_results_collection = None
+_ssh_tunnel = None
+
+def init_mongo():
+    """Initialize MongoDB connection with optional SSH tunnel."""
+    global mongo_client, assessments_collection, assessment_results_collection, _ssh_tunnel, MONGO_URI
+    try:
+        if SSH_TUNNEL_HOST and SSH_TUNNEL_KEY_PATH:
+            logger.info(f"[MongoDB] Starting SSH Tunnel to {SSH_TUNNEL_HOST}...")
+            print(f"[MongoDB] SSH_TUNNEL_HOST={SSH_TUNNEL_HOST}, SSH_TUNNEL_KEY_PATH={SSH_TUNNEL_KEY_PATH}")
+            from sshtunnel import SSHTunnelForwarder
+            _ssh_tunnel = SSHTunnelForwarder(
+                (SSH_TUNNEL_HOST, 22),
+                ssh_username="ec2-user",
+                ssh_pkey=SSH_TUNNEL_KEY_PATH,
+                remote_bind_address=(DOCDB_HOST, 27017),
+                set_keepalive=10.0
+            )
+            _ssh_tunnel.start()
+            local_port = _ssh_tunnel.local_bind_port
+            logger.info(f"[MongoDB] SSH Tunnel active on local port {local_port}")
+            print(f"[MongoDB] SSH Tunnel active on local port {local_port}")
+            MONGO_URI = MONGO_URI.replace(f"{DOCDB_HOST}:27017", f"127.0.0.1:{local_port}")
+            if "tlsAllowInvalidHostnames=true" not in MONGO_URI:
+                MONGO_URI += "&tlsAllowInvalidHostnames=true"
+        else:
+            logger.info("[MongoDB] No SSH tunnel configured, connecting directly.")
+        
+        logger.info(f"[MongoDB] Connecting... URI starts with: {MONGO_URI[:50]}")
+        mongo_client = MongoClient(MONGO_URI)
+        db = mongo_client[APP_ENV]
+        assessments_collection = db["assessments"]
+        assessment_results_collection = db["assessment_results"]
+        logger.info(f"[MongoDB] ✅ Connected to '{APP_ENV}' database successfully.")
+        print(f"[MongoDB] ✅ Connected to '{APP_ENV}' database successfully.")
+    except Exception as e:
+        logger.error(f"[MongoDB] ❌ Connection failed: {e}")
+        print(f"[MongoDB] ❌ Connection failed: {e}")
+        assessments_collection = None
+        assessment_results_collection = None
 
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -74,6 +97,9 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Initialize MongoDB (with optional SSH tunnel) now that logger is ready
+init_mongo()
 
 # Frontend Logger (frontend.log)
 frontend_logger = logging.getLogger("frontend")
