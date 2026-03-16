@@ -25,7 +25,30 @@ BASE_DIR = Path(__file__).parent
 # MongoDB Connection — environment-aware (Dev / Stage / Prod)
 APP_ENV = os.getenv("APP_ENV", "Dev")  # Dev | Stage | Prod
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+
+# SSH Tunnel settings (Optional, for Render to DocumentDB)
+SSH_TUNNEL_HOST = os.getenv("SSH_TUNNEL_HOST")
+SSH_TUNNEL_KEY_PATH = os.getenv("SSH_TUNNEL_KEY_PATH")
+DOCDB_HOST = os.getenv("DOCDB_HOST", "edy-db2.cluster-cgnihey3q7y5.us-east-1.docdb.amazonaws.com")
+
 try:
+    if SSH_TUNNEL_HOST and SSH_TUNNEL_KEY_PATH:
+        logging.getLogger(__name__).info(f"Starting SSH Tunnel to {SSH_TUNNEL_HOST}...")
+        from sshtunnel import SSHTunnelForwarder
+        tunnel = SSHTunnelForwarder(
+            (SSH_TUNNEL_HOST, 22),
+            ssh_username="ec2-user",
+            ssh_pkey=SSH_TUNNEL_KEY_PATH,
+            remote_bind_address=(DOCDB_HOST, 27017)
+        )
+        tunnel.start()
+        
+        # Rewrite MONGO_URI to use the local tunnel port and ignore hostname mismatch
+        MONGO_URI = MONGO_URI.replace(f"{DOCDB_HOST}:27017", f"127.0.0.1:{tunnel.local_bind_port}")
+        if "tlsAllowInvalidHostnames=true" not in MONGO_URI:
+            MONGO_URI += "&tlsAllowInvalidHostnames=true"
+        logging.getLogger(__name__).info(f"SSH Tunnel active. Local port: {tunnel.local_bind_port}")
+
     mongo_client = MongoClient(MONGO_URI)
     db = mongo_client[APP_ENV]  # Selects Dev, Stage, or Prod database
     assessments_collection = db["assessments"]
