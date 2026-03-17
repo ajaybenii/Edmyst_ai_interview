@@ -158,14 +158,25 @@ The silence warnings are just prompts - if the user responds, the interview cont
 - You are an English-speaking interviewer. Always interpret input as English unless explicitly told otherwise.
 """
 
-# Default interview structure (used when no assessment data is available)
+# Default interview structure (adaptive — used when no assessment data is available)
 DEFAULT_INTERVIEW_STRUCTURE = """
-3. Ask 3 technical questions about:
-   - Data structures and algorithms
-   - System design
-   - Problem-solving approach
-4. Ask 2 behavioral questions
-5. Close the interview professionally
+3. Ask the candidate to tell you about themselves and their current role.
+   - Listen carefully to extract:
+     a) What profile/domain they work in (e.g. backend, data science, frontend, DevOps)
+     b) How many years of experience they have
+     c) What technologies or tools they primarily use
+
+4. Based ONLY on what the candidate tells you in their introduction, adapt the interview:
+   - Identify the most relevant technical skills from their background
+   - Ask 3-4 technical questions specific to THEIR profile and experience level
+   - If 0-2 years experience: ask foundational/conceptual questions
+   - If 3-5 years experience: ask intermediate + scenario-based questions
+   - If 6+ years experience: ask architecture, leadership, and deep technical questions
+   - Ask 1-2 follow-up questions based on their answers
+
+5. Ask 1-2 behavioral/soft-skill questions relevant to their role
+
+6. Close the interview professionally
 """
 
 
