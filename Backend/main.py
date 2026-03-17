@@ -74,7 +74,7 @@ MAX_CONCURRENT_CONNECTIONS = int(os.getenv("MAX_CONCURRENT_CONNECTIONS", "1000")
 CONNECTION_TIMEOUT = int(os.getenv("CONNECTION_TIMEOUT", "1800"))  # 30 minutes
 
 INTERVIEW_PROMPT = """
-You are conducting a real-time technical interview for a Software Engineer position.
+You are conducting a real-time technical interview for {role_title} position at {organization}.
 You are based in INDIA and conducting this interview in Indian Standard Time (IST, UTC+5:30).
 
 You can hear and also see the candidate through audio and video.
@@ -133,13 +133,13 @@ The silence warnings are just prompts - if the user responds, the interview cont
    - 5 PM - 9 PM: "Good evening"
    - 9 PM - 6 AM: "Hello"
 
-2. Ask candidate to introduce themselves
-3. Ask 3 technical questions about:
-   - Data structures and algorithms
-   - System design
-   - Problem-solving approach
-4. Ask 2 behavioral questions
-5. Close the interview professionally
+2. Ask candidate to introduce themselves briefly
+{interview_structure}
+
+# Interview Closing:
+- After all skills are evaluated, say:
+  "Thank you! Your interview is now complete. If you have any questions for me, feel free to ask. Otherwise, you can click the Submit Interview button to end the session."
+- If the candidate has questions, answer them naturally, then repeat the closing.
 
 # Visual Observation Rules:
 - You can see the candidate through video
@@ -157,6 +157,111 @@ The silence warnings are just prompts - if the user responds, the interview cont
 - If user want to switch language then proceed with that language
 - You are an English-speaking interviewer. Always interpret input as English unless explicitly told otherwise.
 """
+
+# Default interview structure (used when no assessment data is available)
+DEFAULT_INTERVIEW_STRUCTURE = """
+3. Ask 3 technical questions about:
+   - Data structures and algorithms
+   - System design
+   - Problem-solving approach
+4. Ask 2 behavioral questions
+5. Close the interview professionally
+"""
+
+
+async def fetch_assessment_data(assessment_id: str) -> dict | None:
+    """Fetch assessment details from Lambda for dynamic prompt building."""
+    if not assessment_id:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                LAMBDA_SESSION_URL,
+                params={"assessment_id": assessment_id}
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                logger.info(f"[Prompt] Assessment data fetched: {data.get('title', '?')} at {data.get('organization', '?')}")
+                return data
+            else:
+                logger.warning(f"[Prompt] Lambda returned {resp.status_code} for assessment_id={assessment_id}")
+                return None
+    except Exception as e:
+        logger.error(f"[Prompt] Failed to fetch assessment data: {e}")
+        return None
+
+
+def build_interview_prompt(assessment_data: dict | None) -> str:
+    """Build a complete interview prompt, injecting dynamic assessment data into the template."""
+    if not assessment_data:
+        # Fallback: generic prompt
+        return INTERVIEW_PROMPT.format(
+            role_title="a Software Engineer",
+            organization="the company",
+            interview_structure=DEFAULT_INTERVIEW_STRUCTURE
+        )
+
+    title = assessment_data.get("title", "Software Engineer")
+    org = assessment_data.get("organization", "the company")
+    jd = assessment_data.get("job_description", "")
+    industry = assessment_data.get("industry", "")
+    min_exp = assessment_data.get("min_experience", 0)
+    max_exp = assessment_data.get("max_experience", 0)
+    role_type = assessment_data.get("role_type", "")
+    required_time = assessment_data.get("required_time", 30)
+    multilingual = assessment_data.get("multilingual", ["English"])
+    skills_weightage = assessment_data.get("skills_weightage", {})
+    tech_skills = assessment_data.get("technical_skills", [])
+    additional = assessment_data.get("additional_instruction", [])
+
+    # Build skills list
+    skills_text = ""
+    for i, skill in enumerate(tech_skills, 1):
+        skills_text += f"   {i}. {skill['name']} ({skill.get('proficiency', 'Medium')}) — {skill.get('description', '')}\n"
+
+    # Build weightage info
+    tech_weight = skills_weightage.get("technical_skill", 70)
+    comm_weight = skills_weightage.get("conversation", 30)
+
+    # Build dynamic interview structure
+    interview_structure = f"""
+# JOB DESCRIPTION:
+{jd}
+
+# CANDIDATE PROFILE:
+- Expected Experience: {min_exp}-{max_exp} years
+- Role Type: {role_type}
+- Industry: {industry}
+- Language: {', '.join(multilingual)}
+- Interview Duration: {required_time} minutes
+
+# SKILL EVALUATION:
+You must allocate your questions based on these weightages:
+- Technical Skills: {tech_weight}% of the interview
+- Communication & Soft Skills: {comm_weight}% of the interview
+
+Technical skills to evaluate:
+{skills_text}
+# QUESTION GENERATION RULES:
+- Generate UNIQUE questions for each interview (never use the same questions)
+- Automatically calculate how many questions per skill based on weightage and interview time
+- Start with easier questions and gradually increase difficulty
+- Ask follow-up questions based on candidate's responses for deeper evaluation
+- If a candidate struggles, move to the next skill gracefully
+- Cover ALL listed technical skills before closing the interview
+"""
+
+    # Add any additional instructions from the client
+    if additional and len(additional) > 0:
+        interview_structure += "\n# ADDITIONAL CLIENT INSTRUCTIONS:\n"
+        for instr in additional:
+            interview_structure += f"- {instr}\n"
+
+    return INTERVIEW_PROMPT.format(
+        role_title=f"a {title}",
+        organization=org,
+        interview_structure=interview_structure
+    )
 
 # Service Account Authentication
 def get_access_token():
@@ -663,8 +768,12 @@ async def websocket_interview(websocket: WebSocket):
             ist_now = utc_now + timedelta(hours=5, minutes=30)
             current_time_str = ist_now.strftime("%A, %d %B %Y, %I:%M %p")
             
+            # Fetch assessment data for dynamic prompt
+            assessment_data = await fetch_assessment_data(assessment_id)
+            base_prompt = build_interview_prompt(assessment_data)
+            
             # Dynamic System Prompt with Time Context
-            dynamic_prompt = INTERVIEW_PROMPT + f"\n\n[CURRENT CONTEXT]\nCurrent Time (IST): {current_time_str}\nDefault Location: India"
+            dynamic_prompt = base_prompt + f"\n\n[CURRENT CONTEXT]\nCurrent Time (IST): {current_time_str}\nDefault Location: India"
 
             # Setup with audio and video support + UNLIMITED SESSION TIME
             initial_request = {
