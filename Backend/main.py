@@ -16,71 +16,22 @@ from pathlib import Path
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from pydantic import BaseModel
-from pymongo import MongoClient
+import httpx
 
 load_dotenv(override=True)
 
 BASE_DIR = Path(__file__).parent
 
-# MongoDB Connection — environment-aware (Dev / Stage / Prod)
+# Environment
 APP_ENV = os.getenv("APP_ENV", "Dev")  # Dev | Stage | Prod
-MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 
-# SSH Tunnel settings (Optional, for Render to DocumentDB)
-SSH_TUNNEL_HOST = os.getenv("SSH_TUNNEL_HOST")
-SSH_TUNNEL_KEY_PATH = os.getenv("SSH_TUNNEL_KEY_PATH")
-DOCDB_HOST = os.getenv("DOCDB_HOST", "edy-db2.cluster-cgnihey3q7y5.us-east-1.docdb.amazonaws.com")
-
-# --- STARTUP DIAGNOSTICS (print so they show in Render logs before logging is configured) ---
+# Lambda Function URL for DocumentDB session lookup (bypasses VPC restrictions)
+LAMBDA_SESSION_URL = os.getenv(
+    "LAMBDA_SESSION_URL",
+    "https://7g7pnrwtqchpsqiz3dnuadh4cu0tdact.lambda-url.us-east-1.on.aws/"
+)
 print(f"[STARTUP] APP_ENV={APP_ENV}")
-print(f"[STARTUP] MONGO_URI configured: {bool(MONGO_URI)}")
-print(f"[STARTUP] SSH_TUNNEL_HOST={SSH_TUNNEL_HOST}")
-print(f"[STARTUP] SSH_TUNNEL_KEY_PATH={SSH_TUNNEL_KEY_PATH}")
-print(f"[STARTUP] DOCDB_HOST={DOCDB_HOST}")
-
-# Mongo client placeholders — initialized in init_mongo() after logging is ready
-mongo_client = None
-assessments_collection = None
-assessment_results_collection = None
-_ssh_tunnel = None
-
-def init_mongo():
-    """Initialize MongoDB connection with optional SSH tunnel."""
-    global mongo_client, assessments_collection, assessment_results_collection, _ssh_tunnel, MONGO_URI
-    try:
-        if SSH_TUNNEL_HOST and SSH_TUNNEL_KEY_PATH:
-            logger.info(f"[MongoDB] Starting SSH Tunnel to {SSH_TUNNEL_HOST}...")
-            print(f"[MongoDB] SSH_TUNNEL_HOST={SSH_TUNNEL_HOST}, SSH_TUNNEL_KEY_PATH={SSH_TUNNEL_KEY_PATH}")
-            from sshtunnel import SSHTunnelForwarder
-            _ssh_tunnel = SSHTunnelForwarder(
-                (SSH_TUNNEL_HOST, 22),
-                ssh_username="ec2-user",
-                ssh_pkey=SSH_TUNNEL_KEY_PATH,
-                remote_bind_address=(DOCDB_HOST, 27017),
-                set_keepalive=10.0
-            )
-            _ssh_tunnel.start()
-            local_port = _ssh_tunnel.local_bind_port
-            logger.info(f"[MongoDB] SSH Tunnel active on local port {local_port}")
-            print(f"[MongoDB] SSH Tunnel active on local port {local_port}")
-            MONGO_URI = MONGO_URI.replace(f"{DOCDB_HOST}:27017", f"127.0.0.1:{local_port}")
-            if "tlsAllowInvalidHostnames=true" not in MONGO_URI:
-                MONGO_URI += "&tlsAllowInvalidHostnames=true"
-        else:
-            logger.info("[MongoDB] No SSH tunnel configured, connecting directly.")
-        
-        logger.info(f"[MongoDB] Connecting... URI starts with: {MONGO_URI[:50]}")
-        mongo_client = MongoClient(MONGO_URI)
-        db = mongo_client[APP_ENV]
-        assessments_collection = db["assessments"]
-        assessment_results_collection = db["assessment_results"]
-        logger.info(f"[MongoDB] ✅ Connected to '{APP_ENV}' database successfully.")
-        print(f"[MongoDB] ✅ Connected to '{APP_ENV}' database successfully.")
-    except Exception as e:
-        logger.error(f"[MongoDB] ❌ Connection failed: {e}")
-        print(f"[MongoDB] ❌ Connection failed: {e}")
-        assessments_collection = None
-        assessment_results_collection = None
+print(f"[STARTUP] LAMBDA_SESSION_URL={LAMBDA_SESSION_URL}")
 
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -98,8 +49,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize MongoDB (with optional SSH tunnel) now that logger is ready
-init_mongo()
+logger.info(f"[Config] Lambda session lookup URL: {LAMBDA_SESSION_URL}")
 
 # Frontend Logger (frontend.log)
 frontend_logger = logging.getLogger("frontend")
@@ -574,10 +524,10 @@ async def root():
         **stats
     }
 
-# UI Configuration endpoint — fetches branding per session
+# UI Configuration endpoint — fetches branding per session via Lambda
 @app.get("/api/config")
 async def get_config(user_id: str, video_token: str, debug: bool = False):
-    """Get UI configuration for a specific candidate session."""
+    """Get UI configuration by calling Lambda function (DocumentDB lookup)."""
     defaults = {
         "top_right_logo_url": None,
         "organization_name": "Edmyst AI",
@@ -586,128 +536,58 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
     }
     debug_info = {
         "app_env": APP_ENV,
-        "mongo_uri_configured": bool(MONGO_URI),
-        "collections_available": assessments_collection is not None and assessment_results_collection is not None,
+        "lambda_url": LAMBDA_SESSION_URL,
         "lookup": {
             "video_token": video_token,
-            "user_id": user_id,
-            "matching_fields": ["enterprise_id", "user_id"]
+            "user_id": user_id
         },
-        "session_found": False,
-        "assessment_found": False,
+        "lambda_status": None,
         "fallback_reason": None
     }
-    
-    if assessments_collection is None or assessment_results_collection is None:
-        debug_info["fallback_reason"] = "mongo_collections_unavailable"
-        logger.warning(
-            "Config fallback: Mongo collections unavailable | env=%s user_id=%s video_token=%s",
-            APP_ENV,
-            user_id,
-            video_token
-        )
-        if debug:
-            defaults["_debug"] = debug_info
-        return defaults
-    
+
     try:
-        # Step 1: Lookup the assessment_results row using video_token and user_id (which acts as enterprise_id)
-        session_query = {
-            "video_token": video_token,
-            "$or": [
-                {"enterprise_id": user_id},
-                {"user_id": user_id}
-            ]
-        }
-        session = assessment_results_collection.find_one(session_query)
-        
-        if not session:
-            debug_info["fallback_reason"] = "assessment_result_not_found"
-            logger.warning(
-                "Config fallback: assessment_result not found | env=%s user_id=%s video_token=%s query=%s",
-                APP_ENV,
-                user_id,
-                video_token,
-                session_query
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                LAMBDA_SESSION_URL,
+                params={"user_id": user_id, "video_token": video_token}
             )
-            if debug:
-                defaults["_debug"] = debug_info
-            return defaults
+            debug_info["lambda_status"] = resp.status_code
 
-        debug_info["session_found"] = True
-        real_assessment_id = session.get("assessment_id")
-        assessment_result_id = str(session.get("_id"))
-
-        defaults["assessment_id"] = real_assessment_id
-        defaults["assessment_result_id"] = assessment_result_id
-        debug_info["assessment_result_id"] = assessment_result_id
-        debug_info["resolved_assessment_id"] = str(real_assessment_id) if real_assessment_id is not None else None
-
-        if real_assessment_id:
-            # Step 2: Lookup the actual assessment definition
-            assessment = assessments_collection.find_one(
-                {"_id": real_assessment_id},
-                {"organization": 1, "organization_logo": 1, "_id": 0}
-            )
-            if assessment:
-                debug_info["assessment_found"] = True
-                if assessment.get("organization"):
-                    defaults["organization_name"] = assessment["organization"]
-                if assessment.get("organization_logo"):
-                    defaults["top_right_logo_url"] = assessment["organization_logo"]
-
-                missing_fields = []
-                if not assessment.get("organization"):
-                    missing_fields.append("organization")
-                if not assessment.get("organization_logo"):
-                    missing_fields.append("organization_logo")
-
-                if missing_fields:
-                    debug_info["fallback_reason"] = f"assessment_missing_fields:{','.join(missing_fields)}"
-                    logger.warning(
-                        "Config partial fallback: assessment missing fields | env=%s assessment_id=%s missing=%s",
-                        APP_ENV,
-                        real_assessment_id,
-                        ",".join(missing_fields)
-                    )
-                else:
-                    logger.info(
-                        "Config resolved successfully | env=%s assessment_result_id=%s assessment_id=%s organization=%s has_logo=%s",
-                        APP_ENV,
-                        assessment_result_id,
-                        real_assessment_id,
-                        defaults["organization_name"],
-                        bool(defaults["top_right_logo_url"])
-                    )
-            else:
-                debug_info["fallback_reason"] = "assessment_not_found"
-                logger.warning(
-                    "Config fallback: assessment not found | env=%s assessment_id=%s assessment_result_id=%s",
-                    APP_ENV,
-                    real_assessment_id,
-                    assessment_result_id
+            if resp.status_code == 200:
+                data = resp.json()
+                defaults["assessment_id"] = data.get("assessment_id")
+                defaults["assessment_result_id"] = data.get("assessment_result_id")
+                if data.get("organization_name"):
+                    defaults["organization_name"] = data["organization_name"]
+                if data.get("top_right_logo_url"):
+                    defaults["top_right_logo_url"] = data["top_right_logo_url"]
+                logger.info(
+                    "Config resolved via Lambda | env=%s user_id=%s org=%s",
+                    APP_ENV, user_id, defaults["organization_name"]
                 )
-        else:
-            debug_info["fallback_reason"] = "session_missing_assessment_id"
-            logger.warning(
-                "Config fallback: session missing assessment_id | env=%s assessment_result_id=%s user_id=%s",
-                APP_ENV,
-                assessment_result_id,
-                user_id
-            )
+            elif resp.status_code == 404:
+                debug_info["fallback_reason"] = "session_not_found_in_lambda"
+                logger.warning(
+                    "Config fallback: Lambda returned 404 | user_id=%s video_token=%s",
+                    user_id, video_token
+                )
+            else:
+                debug_info["fallback_reason"] = f"lambda_error_{resp.status_code}"
+                debug_info["lambda_body"] = resp.text[:200]
+                logger.error(
+                    "Config fallback: Lambda error %s | user_id=%s", resp.status_code, user_id
+                )
     except Exception as e:
         debug_info["fallback_reason"] = "exception"
         debug_info["error"] = str(e)
         logger.exception(
-            "Failed to fetch assessment config | env=%s user_id=%s video_token=%s",
-            APP_ENV,
-            user_id,
-            video_token
+            "Failed to fetch config from Lambda | user_id=%s video_token=%s",
+            user_id, video_token
         )
 
     if debug:
         defaults["_debug"] = debug_info
-    
+
     return defaults
 
 @app.get("/health")
