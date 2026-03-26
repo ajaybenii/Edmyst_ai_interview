@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proctoring Report | Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f0f6ff;
+      --bg-page: linear-gradient(165deg, #f8fafc 0%, #eff6ff 45%, #e0f2fe 100%);
+      --card: #ffffff;
+      --border: #dbeafe;
+      --border-strong: #bfdbfe;
+      --text: #0f172a;
+      --text-secondary: #64748b;
+      --accent: #2563eb;
+      --accent-light: #3b82f6;
+      --accent-soft: #eff6ff;
+      --success: #16a34a;
+      --warning: #ca8a04;
+      --danger: #dc2626;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --shadow: 0 4px 24px rgba(37, 99, 235, 0.08), 0 1px 3px rgba(15, 23, 42, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg-page);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+    }
+    .app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+    }
+    .header {
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header h1 {
+      font-size: 1.65rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 6px;
+      color: #1e3a8a;
+    }
+    .header .tagline {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      margin: 0;
+    }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow);
+    }
+    .panel-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--accent);
+      margin: 0 0 16px;
+    }
+    .form-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+    }
+    .field { flex: 0 0 auto; }
+    .field label {
+      display: block;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .field input,
+    .field select {
+      display: block;
+      width: 100%;
+      min-width: 180px;
+      background: #fafafa;
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.9rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .field input:focus,
+    .field select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      background: #fff;
+    }
+    .field input::placeholder { color: #94a3b8; }
+    .btn-load {
+      background: linear-gradient(180deg, var(--accent-light) 0%, var(--accent) 100%);
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: filter 0.15s, box-shadow 0.15s;
+      height: 42px;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+    }
+    .btn-load:hover { filter: brightness(1.05); box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3); }
+    .err {
+      background: #fef2f2;
+      color: #b91c1c;
+      padding: 14px 18px;
+      border-radius: var(--radius-sm);
+      margin-bottom: 20px;
+      font-size: 0.9rem;
+      border: 1px solid #fecaca;
+      display: none;
+    }
+    .err.show { display: block; }
+    #report { margin-top: 24px; }
+    .report-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 32px;
+      margin-bottom: 8px;
+    }
+    .gauge-wrap { flex-shrink: 0; }
+    .gauge {
+      width: 140px;
+      height: 140px;
+      border-radius: 50%;
+      background: conic-gradient(var(--gauge-color, var(--accent)) calc(var(--p) * 1%), #e2e8f0 0);
+      display: grid;
+      place-items: center;
+      position: relative;
+    }
+    .gauge::after {
+      content: attr(data-score) '%';
+      position: absolute;
+      inset: 10px;
+      background: #fff;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #1e3a8a;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+    }
+    .gauge-label {
+      text-align: center;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      margin-top: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    .meta-block {
+      flex: 1;
+      min-width: 200px;
+      display: grid;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+    .meta-block strong { color: var(--text); }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .stat-card {
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      text-align: center;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .stat-card:hover {
+      border-color: var(--accent-light);
+      transform: translateY(-1px);
+    }
+    .stat-card .value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #1e40af;
+      line-height: 1.2;
+    }
+    .stat-card .label {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      background: #fafafa;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      background: var(--accent-soft);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(37, 99, 235, 0.04); }
+    td code {
+      font-family: 'DM Mono', monospace;
+      font-size: 0.75rem;
+      background: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+    }
+    .empty-state {
+      color: var(--text-secondary);
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    .login-panel { max-width: 420px; margin: 0 auto; }
+    .login-panel .field { min-width: 100%; }
+    .btn-block { width: 100%; margin-top: 8px; }
+    .auth-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .auth-tabs button {
+      background: none; color: var(--text-secondary); border: none; padding: 10px 16px;
+      font-family: inherit; font-size: 0.9rem; cursor: pointer; border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .auth-tabs button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+    .auth-form { display: none; }
+    .auth-form.active { display: block; }
+    .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+    .btn-logout {
+      background: #fff;
+      color: var(--accent);
+      border: 1px solid var(--border-strong);
+      padding: 8px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-logout:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-row">
+        <div>
+          <h1>Proctoring report</h1>
+          <p class="tagline">Session integrity, trust score, and event log.</p>
+        </div>
+        <button type="button" class="btn-logout" id="logoutBtn" style="display: none;">Logout</button>
+      </div>
+    </header>
+
+    <div class="err" id="err"></div>
+
+    <div id="loginScreen" class="panel login-panel">
+      <h2 class="panel-title">Sign in</h2>
+      <div class="auth-tabs">
+        <button type="button" id="tabLogin" class="active">Login</button>
+        <button type="button" id="tabRegister">Register (first user)</button>
+      </div>
+      <div id="formLogin" class="auth-form active">
+        <div class="field">
+          <label for="emailLogin">Email</label>
+          <input type="email" id="emailLogin" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="passwordLogin">Password</label>
+          <input type="password" id="passwordLogin" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button type="button" class="btn-load btn-block" id="loginBtn">Login</button>
+      </div>
+      <div id="formRegister" class="auth-form">
+        <div class="field">
+          <label for="emailReg">Email</label>
+          <input type="email" id="emailReg" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="field">
+          <label for="nameReg">Name (optional)</label>
+          <input type="text" id="nameReg" placeholder="Your name" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="passwordReg">Password (min 6)</label>
+          <input type="password" id="passwordReg" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+        <button type="button" class="btn-load btn-block" id="registerBtn">Create account</button>
+      </div>
+    </div>
+
+    <div id="mainScreen" style="display: none;">
+      <section class="panel">
+        <h2 class="panel-title">Load report</h2>
+        <div class="form-row">
+          <div class="field" style="min-width: 120px;">
+            <label for="env">Environment</label>
+            <select id="env">
+              <option value="dev">Dev</option>
+              <option value="stage">Stage</option>
+              <option value="prod">Prod</option>
+            </select>
+          </div>
+          <div class="field" style="min-width: 260px;">
+            <label for="resultId">Video token or result ID</label>
+            <input type="text" id="resultId" placeholder="video_token from URL, or 24-char Mongo _id" autocomplete="off" />
+          </div>
+          <div class="field">
+            <button type="button" class="btn-load" id="loadBtn">Load report</button>
+          </div>
+        </div>
+      </section>
+
+      <div id="report" style="display: none;">
+        <section class="panel">
+          <h2 class="panel-title">Summary</h2>
+          <div class="report-header">
+            <div class="gauge-wrap">
+              <div class="gauge" id="gauge" data-score="0" style="--p: 0; --gauge-color: var(--accent);"></div>
+              <div class="gauge-label">Trust score</div>
+            </div>
+            <div class="meta-block" id="meta"></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Event counts</h2>
+          <div class="cards" id="cards"></div>
+        </section>
+
+        <section class="panel">
+          <h2 class="panel-title">Event log</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Time (UTC)</th>
+                  <th>Metadata</th>
+                </tr>
+              </thead>
+              <tbody id="tbody"></tbody>
+            </table>
+            <div class="empty-state" id="emptyLog" style="display: none;">No events recorded for this session.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Proctoring API — local dev. Deploy: replace with https://your-service.onrender.com
+    const API_BASE = 'https://edmyst-proctoring.onrender.com';
+
+    const LABELS = {
+      noise_detected: 'Noise detected',
+      went_offline: 'Went offline',
+      tab_switched: 'Tab switched',
+      no_face_detected: 'No face',
+      multiple_faces: 'Multiple faces',
+      exited_fullscreen: 'Exited fullscreen',
+      multiple_monitors: 'Multiple monitors',
+      window_blur: 'Window blur',
+    };
+
+    const errEl = document.getElementById('err');
+    function showErr(msg) {
+      errEl.textContent = msg;
+      errEl.classList.toggle('show', !!msg);
+    }
+    function detailFromApi(d) {
+      if (!d) return '';
+      if (typeof d.detail === 'string') return d.detail;
+      if (Array.isArray(d.detail)) {
+        return d.detail.map((x) => (x.msg || x.message || JSON.stringify(x))).join('; ');
+      }
+      if (d.detail && typeof d.detail === 'object') return JSON.stringify(d.detail);
+      return d.message || String(d);
+    }
+
+    const TOKEN_KEY = 'proctoring_dashboard_token';
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
+
+    function apiUrl(path) {
+      const base = (API_BASE || '').replace(/\/$/, '');
+      return base + path;
+    }
+
+    function showScreen(loggedIn) {
+      document.getElementById('loginScreen').style.display = loggedIn ? 'none' : 'block';
+      document.getElementById('mainScreen').style.display = loggedIn ? 'block' : 'none';
+      document.getElementById('logoutBtn').style.display = loggedIn ? 'block' : 'none';
+    }
+
+    document.getElementById('tabLogin').onclick = () => {
+      document.getElementById('tabLogin').classList.add('active');
+      document.getElementById('tabRegister').classList.remove('active');
+      document.getElementById('formLogin').classList.add('active');
+      document.getElementById('formRegister').classList.remove('active');
+    };
+    document.getElementById('tabRegister').onclick = () => {
+      document.getElementById('tabRegister').classList.add('active');
+      document.getElementById('tabLogin').classList.remove('active');
+      document.getElementById('formRegister').classList.add('active');
+      document.getElementById('formLogin').classList.remove('active');
+    };
+
+    document.getElementById('loginBtn').onclick = async () => {
+      showErr('');
+      const email = document.getElementById('emailLogin').value.trim();
+      const password = document.getElementById('passwordLogin').value;
+      if (!email || !password) { showErr('Email and password required'); return; }
+      try {
+        const r = await fetch(apiUrl('/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(detailFromApi(d) || r.statusText);
+        }
+        const data = await r.json();
+        setToken(data.access_token);
+        showScreen(true);
+      } catch (e) {
+        showErr(e.message || 'Login failed (is proctoring API running on ' + API_BASE + '?)');
+      }
+    };
+
+    document.getElementById('registerBtn').onclick = async () => {
+      showErr('');
+      const email = document.getElementById('emailReg').value.trim();
+      const name = document.getElementById('nameReg').value.trim();
+      const password = document.getElementById('passwordReg').value;
+      if (!email || !password) { showErr('Email and password required'); return; }
+      if (password.length < 6) { showErr('Password must be at least 6 characters'); return; }
+      try {
+        const r = await fetch(apiUrl('/auth/register'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, name: name || null, password }),
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          throw new Error(detailFromApi(d) || r.statusText);
+        }
+        document.getElementById('tabLogin').click();
+        document.getElementById('emailLogin').value = email;
+        document.getElementById('passwordLogin').value = password;
+        showErr('Account created. Click Login.');
+      } catch (e) {
+        showErr(e.message || 'Registration failed');
+      }
+    };
+
+    document.getElementById('logoutBtn').onclick = () => {
+      setToken(null);
+      showScreen(false);
+      document.getElementById('report').style.display = 'none';
+    };
+
+    document.getElementById('loadBtn').onclick = async () => {
+      const token = getToken();
+      showErr('');
+      const env = document.getElementById('env').value;
+      const lookup = document.getElementById('resultId').value.trim();
+      if (!lookup) { showErr('Video token or assessment result ID required.'); return; }
+      if (!token) { showErr('Session expired. Please login again.'); showScreen(false); return; }
+
+      try {
+        const u = new URL('/v1/report', apiUrl(''));
+        u.searchParams.set('environment', env);
+        u.searchParams.set('lookup', lookup);
+        const r = await fetch(u.toString(), { headers: { 'Authorization': 'Bearer ' + token } });
+        if (r.status === 401) {
+          setToken(null);
+          showScreen(false);
+          showErr('Session expired. Please login again.');
+          return;
+        }
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(t || r.statusText);
+        }
+        const data = await r.json();
+        render(data);
+      } catch (e) {
+        showErr(e.message || String(e));
+        document.getElementById('report').style.display = 'none';
+      }
+    };
+
+    if (getToken()) showScreen(true);
+    else showScreen(false);
+
+    function trustColor(score) {
+      if (score >= 70) return 'var(--success)';
+      if (score >= 40) return 'var(--warning)';
+      return 'var(--danger)';
+    }
+
+    function render(data) {
+      document.getElementById('report').style.display = 'block';
+      const trust = data.trust_score ?? 0;
+      const g = document.getElementById('gauge');
+      g.style.setProperty('--p', trust);
+      g.style.setProperty('--gauge-color', trustColor(trust));
+      g.setAttribute('data-score', trust);
+
+      const s = data.session;
+      const started = s.started_at ? new Date(s.started_at).toLocaleString() : '—';
+      const ended = s.ended_at ? new Date(s.ended_at).toLocaleString() : '— (open)';
+      document.getElementById('meta').innerHTML = `
+        <div><strong>Result ID</strong> ${s.id.slice(0, 8)}…</div>
+        <div><strong>Video token</strong> ${s.video_token || '—'}</div>
+        <div><strong>Started</strong> ${started}</div>
+        <div><strong>Ended</strong> ${ended}</div>
+        <div><strong>User ID</strong> ${s.user_id || '—'}</div>
+      `;
+
+      const counts = data.counts || {};
+      const keys = Object.keys(LABELS);
+      const cards = document.getElementById('cards');
+      cards.innerHTML = keys.map(k => `
+        <div class="stat-card">
+          <div class="value">${counts[k] ?? 0}</div>
+          <div class="label">${LABELS[k]}</div>
+        </div>
+      `).join('');
+
+      const tbody = document.getElementById('tbody');
+      const evs = data.events || [];
+      document.getElementById('emptyLog').style.display = evs.length ? 'none' : 'block';
+      tbody.innerHTML = evs.map(e => `
+        <tr>
+          <td>${LABELS[e.event_type] || e.event_type}</td>
+          <td>${e.occurred_at}</td>
+          <td><code>${JSON.stringify(e.metadata || {})}</code></td>
+        </tr>
+      `).join('');
+    }
+  </script>
+</body>
+</html>

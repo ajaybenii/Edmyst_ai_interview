@@ -36,13 +36,17 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Configure environment variables (create `.env` file):
+4. Configure environment variables (copy `.env.example` → `.env`):
 ```env
 GOOGLE_APPLICATION_CREDENTIALS=your-credentials.json
 PROJECT_ID=your-gcp-project-id
 LOCATION=us-central1
 LOG_LEVEL=INFO
+# Browser / frontend (Netlify static app)
+PUBLIC_API_BASE=https://your-backend.onrender.com
+# PUBLIC_WS_URL=wss://your-backend.onrender.com/ws/interview   # optional; auto from API_BASE if empty
 ```
+Run `python generate_frontend_config.py` to refresh `Frontend/interview-config.js`.
 
 5. Run the server:
 ```bash
