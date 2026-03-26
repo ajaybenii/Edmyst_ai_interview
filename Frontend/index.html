@@ -1231,8 +1231,6 @@
         </div>
     </div>
 
-    <!-- URLs from Backend/.env: run `python generate_frontend_config.py` in Backend/ -->
-    <script src="interview-config.js"></script>
     <script>
         // Audio Context for click sounds
         let clickAudioCtx = null;
@@ -1258,82 +1256,10 @@
             osc.stop(clickAudioCtx.currentTime + 0.15);
         }
 
-        // Network Monitoring (PUBLIC_API_BASE / PUBLIC_WS_URL in Backend/.env → interview-config.js)
+        // Network Monitoring
         let networkQuality = 'good';
         let lastMeasuredSpeed = null;
-        const _ic = window.INTERVIEW_CONFIG || {};
-        const API_BASE = (_ic.API_BASE || 'http://127.0.0.1:8000').replace(/\/$/, '');
-        const WS_URL = _ic.WS_URL || API_BASE.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:') + '/ws/interview';
-        const HEALTH_URL = _ic.HEALTH_URL || `${API_BASE}/health`;
-        let proctorSessionId = null;
-        async function postProctoringEvent(event_type, metadata = {}) {
-            const b = (_ic.PROCTORING_API_BASE || '').replace(/\/$/, '');
-            const k = _ic.PROCTORING_API_KEY;
-            if (!proctorSessionId || !b || !k) return;
-            try {
-                await fetch(`${b}/v1/sessions/${encodeURIComponent(proctorSessionId)}/events`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-API-Key': k },
-                    body: JSON.stringify({
-                        events: [{ event_type, metadata, occurred_at: new Date().toISOString() }]
-                    })
-                });
-            } catch (e) { console.warn('proctoring event', e); }
-        }
-        async function initProctoringSession() {
-            const b = (_ic.PROCTORING_API_BASE || '').replace(/\/$/, '');
-            const k = _ic.PROCTORING_API_KEY;
-            if (!b || !k || !sessionMetadata.videoToken) return;
-            const env = (new URLSearchParams(location.search).get('env') || 'dev').toLowerCase();
-            try {
-                const r = await fetch(`${b}/v1/sessions`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'X-API-Key': k },
-                    body: JSON.stringify({
-                        environment: env,
-                        video_token: sessionMetadata.videoToken,
-                        assessment_id: sessionMetadata.assessmentId,
-                        assessment_result_id: sessionMetadata.assessmentResultId || null,
-                        user_id: sessionMetadata.userId,
-                        client_info: { ua: navigator.userAgent, platform: navigator.platform || '' }
-                    })
-                });
-                if (r.ok) {
-                    const j = await r.json();
-                    proctorSessionId = j.session_id;
-                    console.log('Proctoring session:', proctorSessionId);
-                }
-            } catch (e) { console.warn('proctoring session', e); }
-        }
-        async function endProctoringSession() {
-            const b = (_ic.PROCTORING_API_BASE || '').replace(/\/$/, '');
-            const k = _ic.PROCTORING_API_KEY;
-            if (!proctorSessionId || !b || !k) return;
-            try {
-                await fetch(`${b}/v1/sessions/${encodeURIComponent(proctorSessionId)}/end`, {
-                    method: 'PATCH',
-                    headers: { 'X-API-Key': k }
-                });
-            } catch (e) { /* ignore */ }
-            proctorSessionId = null;
-        }
-        function tryFullscreenAfterScreenShare() {
-            document.getElementById('screenshareWarning').style.display = 'none';
-            document.getElementById('fullscreenPrompt').classList.remove('active');
-            const el = document.documentElement;
-            const req = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen;
-            if (!req) {
-                document.getElementById('fullscreenPrompt').classList.add('active');
-                document.getElementById('startBtn').disabled = false;
-                return;
-            }
-            req.call(el).then(() => {
-                document.getElementById('startBtn').disabled = false;
-            }).catch(() => {
-                document.getElementById('fullscreenPrompt').classList.add('active');
-                document.getElementById('startBtn').disabled = false;
-            });
-        }
+        const API_BASE = 'https://edmyst-ai-interview.onrender.com';
 
         // Real speed test using Cloudflare CDN (runs at page load for accuracy)
         async function realSpeedTest() {
@@ -1621,7 +1547,7 @@
         // Main Interview Logic
         let ws = null, videoInterval = null, audioContext = null, playbackContext = null;
         let mediaStream = null, videoStream = null, processor = null;
-        let isActive = false, endingInterviewFlow = false, nextPlayTime = 0, isCameraOn = true, isMicOn = true;
+        let isActive = false, nextPlayTime = 0, isCameraOn = true, isMicOn = true;
         let currentAIMessage = null, currentUserMessage = null;
         let aiTextBuffer = "", userTextBuffer = "", userIsSpeaking = false;
         let aiIsSpeaking = false;
@@ -1650,6 +1576,8 @@
 
         const INPUT_SAMPLE_RATE = 16000;
         const OUTPUT_SAMPLE_RATE = 24000;
+        const WS_URL = 'wss://edmyst-ai-interview.onrender.com/ws/interview';
+        const HEALTH_URL = 'https://edmyst-ai-interview.onrender.com/health';
 
         // --- Backend Health Check & Loader ---
         function showServerLoader(show) {
@@ -1828,7 +1756,6 @@ registerProcessor('pcm-processor', PCMProcessor);
                         },
                     });
                     isRecordingScreen = true;
-                    tryFullscreenAfterScreenShare();
                     return; // Skip getDisplayMedia
                 }
 
@@ -1872,8 +1799,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                     if (e.data.size > 0) combinedChunks.push(e.data);
                 };
                 combinedRecorder.onstop = async () => {
-                    const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
-                    if (blob.size > 500) await saveRecording(blob, 'combined_audio');
+                    if (isActive) {
+                        const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
+                        await saveRecording(blob, 'combined_audio');
+                    }
                 };
                 combinedRecorder.start(1000);
 
@@ -1898,13 +1827,18 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 screenRecorder.onstop = async () => {
-                    const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
-                    if (blob.size > 500) await saveRecording(blob, 'screen');
+                    if (isActive) {
+                        const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
+                        await saveRecording(blob, 'screen');
+                    }
                 };
 
                 screenRecorder.start(1000);
                 isRecordingScreen = true;
-                tryFullscreenAfterScreenShare();
+
+                // Hide screen share warning and show fullscreen prompt
+                document.getElementById('screenshareWarning').style.display = 'none';
+                document.getElementById('fullscreenPrompt').classList.add('active');
 
             } catch (e) {
                 Logger.log('error', 'Screen recording error:', { error: e.message });
@@ -1914,43 +1848,24 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
+        // Stop recordings  
         async function stopRecordings() {
             if (audioRecorder && audioRecorder.state !== 'inactive') {
-                await new Promise((res) => {
-                    const prev = audioRecorder.onstop;
-                    audioRecorder.onstop = async () => {
-                        if (prev) await prev();
-                        res();
-                    };
-                    audioRecorder.stop();
-                });
+                audioRecorder.stop();
                 isRecordingAudio = false;
             }
-            if (combinedRecorder && combinedRecorder.state !== 'inactive') {
-                await new Promise((res) => {
-                    combinedRecorder.onstop = async () => {
-                        const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
-                        if (blob.size > 500) await saveRecording(blob, 'combined_audio');
-                        res();
-                    };
-                    combinedRecorder.stop();
-                });
-            }
             if (screenRecorder && screenRecorder.state !== 'inactive') {
-                await new Promise((res) => {
-                    screenRecorder.onstop = async () => {
-                        const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
-                        if (blob.size > 500) await saveRecording(blob, 'screen');
-                        screenStream?.getTracks().forEach(t => t.stop());
-                        res();
-                    };
-                    screenRecorder.stop();
-                });
+                screenRecorder.stop();
+                screenStream?.getTracks().forEach(t => t.stop());
                 isRecordingScreen = false;
             }
+            // Stop combined audio recorder (AI + User)
+            if (combinedRecorder && combinedRecorder.state !== 'inactive') {
+                combinedRecorder.stop();
+            }
+            // Stop rrweb if mobile
             if (rrwebStopFn) {
-                rrwebStopFn();
-                rrwebStopFn = null;
+                rrwebStopFn(); // stop recording DOM
                 const rrwebBlob = new Blob([JSON.stringify(rrwebEvents)], { type: 'application/json' });
                 await saveRecording(rrwebBlob, 'rrweb');
                 isRecordingScreen = false;
@@ -2046,9 +1961,6 @@ registerProcessor('pcm-processor', PCMProcessor);
         function setupSecurityListeners() {
             // Tab Switch Tracking
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden && proctorSessionId) {
-                    postProctoringEvent('tab_switched');
-                }
                 if (document.hidden && isActive) {
                     sessionMetadata.securityFlags.push({ event: 'tab_switch', time: new Date().toISOString() });
                     document.getElementById('tabWarningBlocker').classList.add('active');
@@ -2057,21 +1969,15 @@ registerProcessor('pcm-processor', PCMProcessor);
             });
 
             window.addEventListener('blur', () => {
-                if (proctorSessionId) postProctoringEvent('window_blur', {});
                 if (isActive) {
                     sessionMetadata.securityFlags.push({ event: 'window_blur', time: new Date().toISOString() });
+                    // document.getElementById('tabWarningBlocker').classList.add('active');
                     Logger.log('warn', 'User lost focus on the window');
                 }
             });
 
-            window.addEventListener('offline', () => {
-                if (proctorSessionId) postProctoringEvent('went_offline', { source: 'navigator' });
-            });
-
+            // Fullscreen Drop Tracking
             document.addEventListener('fullscreenchange', () => {
-                if (!document.fullscreenElement && proctorSessionId && !endingInterviewFlow && !isMobile()) {
-                    postProctoringEvent('exited_fullscreen');
-                }
                 if (!document.fullscreenElement && isActive && !isMobile()) {
                     sessionMetadata.securityFlags.push({ event: 'fullscreen_exit', time: new Date().toISOString() });
                     document.getElementById('fullscreenBlocker').classList.add('active');
@@ -2340,15 +2246,10 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
-        window.addEventListener('DOMContentLoaded', async () => {
+        // Run on page load
+        window.addEventListener('DOMContentLoaded', () => {
             const validParams = parseURLParameters();
-            await fetchUIConfig();
-            await initProctoringSession();
-            try {
-                if (window.screen && window.screen.isExtended) {
-                    postProctoringEvent('multiple_monitors', { detected: true });
-                }
-            } catch (e) { /* ignore */ }
+            fetchUIConfig();
             if (!validParams) {
                 // Disable start button if params invalid
                 document.getElementById('startBtn').disabled = true;
@@ -2655,44 +2556,43 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('waveform').classList.remove('active');
         }
 
-        async function stopInterview() {
-            endingInterviewFlow = true;
+        function stopInterview() {
             playClickSound('end');
             if (videoInterval) clearInterval(videoInterval);
             if (timerInterval) clearInterval(timerInterval);
             ws?.close();
+            stopAudioStream();
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
             isActive = false;
 
+            // Hide fullscreen warning if visible
             document.getElementById('fullscreenWarning').classList.remove('active');
-            document.getElementById('fullscreenBlocker').classList.remove('active');
-            document.getElementById('tabWarningBlocker').classList.remove('active');
 
+            // Exit fullscreen mode
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(() => { });
+            }
+
+            // Hide and reset timer
             const timerEl = document.getElementById('interviewTimer');
             timerEl.classList.remove('active', 'warning', 'critical');
             document.getElementById('timerDisplay').textContent = '30:00';
             interviewStartTime = null;
 
-            await stopRecordings();
-            await new Promise(r => setTimeout(r, 1500));
-            stopAudioStream();
+            // Stop and save recordings
+            stopRecordings();
 
-            if (document.fullscreenElement) {
-                await document.exitFullscreen().catch(() => { });
-            }
-            endingInterviewFlow = false;
-
+            // Stop shared mic stream at the very end
             if (sharedMicStream) {
                 sharedMicStream.getTracks().forEach(t => t.stop());
                 sharedMicStream = null;
-                mediaInitialized = false;
                 console.log('Shared microphone stream stopped');
             }
 
-            await endProctoringSession();
-
             updateStatus('Interview Ended', false);
+
+            // Show the interview completion page
             const el = document.getElementById('interviewComplete'); if (el) el.classList.add('active');
             startCompletionCelebration();
         }

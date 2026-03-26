@@ -17,13 +17,12 @@ Real-time AI-powered interview interface that connects to the Gemini Live Audio/
 git clone https://github.com/ajaybenii/AI-Audio-Interview-Frontend.git
 ```
 
-2. **URLs (Backend `.env`):** Copy `Backend/.env.example` → `Backend/.env`, set `PUBLIC_API_BASE` (and optional `PUBLIC_WS_URL`). Then:
-   ```bash
-   cd Backend && python generate_frontend_config.py
-   ```
-   This writes `Frontend/interview-config.js`. Agar ye file na ho, `index.html` mein fallback URLs use hongi.
+2. Update the WebSocket URL in `index.html` if needed:
+```javascript
+const WS_URL = 'wss://your-backend-url.com/ws/interview';
+```
 
-3. Open `index.html` in your browser or deploy to Netlify/Vercel (**`interview-config.js` deploy karna mat bhoolna**).
+3. Open `index.html` in your browser or deploy to Netlify/Vercel.
 
 ## Backend
 

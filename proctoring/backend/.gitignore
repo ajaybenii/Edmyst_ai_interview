@@ -1,4 +1,0 @@
-.env
-.venv/
-# legacy SQLite (no longer used)
-proctoring.db
