@@ -1100,8 +1100,8 @@
             <div class="completion-icon-wrapper">
                 <span class="material-symbols-rounded">check</span>
             </div>
-            <div class="completion-title">Interview Submitted</div>
-            <div class="completion-msg">Thank you for your time and effort! Your responses and session recordings have
+            <div class="completion-title" id="completionTitleText">Interview Submitted</div>
+            <div class="completion-msg" id="completionMsgText">Thank you for your time and effort! Your responses and session recordings have
                 been successfully saved to our system.</div>
 
             <div class="completion-divider"></div>
@@ -1559,6 +1559,14 @@
         const INTERVIEW_DURATION = 30 * 60; // 30 minutes
         let interviewStartTime = null;
         let timerInterval = null;
+        /** 30m timeout: single auto-submit, no duplicate timers */
+        let timeoutAutoSubmitScheduled = false;
+        let fiveMinuteWarningSent = false;
+        /** ~180s without user final speech → one welfare prompt (resets when user speaks) */
+        let lastUserFinalSpeechAt = 0;
+        let silenceWelfareLatched = false;
+        let silenceWatchInterval = null;
+        let stopInterviewInProgress = false;
 
         // Recording variables
         let audioRecorder = null;
@@ -2141,7 +2149,18 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
-
+        function tickSilenceWelfare() {
+            if (!isActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+            if (silenceWelfareLatched) return;
+            if (Date.now() - lastUserFinalSpeechAt < 180000) return;
+            silenceWelfareLatched = true;
+            const lang = (sessionMetadata.language || 'english').toLowerCase();
+            sendSystemMessage(
+                '[SYSTEM] Welfare check: the candidate has not spoken for about 3 minutes. ' +
+                'Say exactly one short, natural sentence in the interview language (' + lang + ') — ' +
+                'kindly ask if they can hear you, need a moment, or are having an audio issue. Warm tone, not robotic.'
+            );
+        }
 
         function updateTimer() {
             if (!interviewStartTime) return;
@@ -2164,10 +2183,15 @@ registerProcessor('pcm-processor', PCMProcessor);
                 timerEl.classList.add('warning');
             }
 
-            // Auto-end when timer runs out
-            if (remaining <= 0 && isActive) {
-                sendSystemMessage("[SYSTEM] Interview time limit (30 minutes) reached. Ending interview.");
-                setTimeout(() => stopInterview(), 5000);
+            if (remaining === 300 && !fiveMinuteWarningSent && isActive && ws && ws.readyState === WebSocket.OPEN) {
+                fiveMinuteWarningSent = true;
+                sendSystemMessage('[SYSTEM] There are 5 minutes remaining in this interview.');
+            }
+
+            if (remaining <= 0 && isActive && !timeoutAutoSubmitScheduled) {
+                timeoutAutoSubmitScheduled = true;
+                sendSystemMessage('[SYSTEM] Interview time limit (30 minutes) reached. Ending interview.');
+                setTimeout(() => stopInterview('timeout'), 2200);
             }
         }
 
@@ -2315,6 +2339,12 @@ registerProcessor('pcm-processor', PCMProcessor);
 
             isActive = true;
             interviewTranscriptTurns = [];
+            timeoutAutoSubmitScheduled = false;
+            fiveMinuteWarningSent = false;
+            lastUserFinalSpeechAt = Date.now();
+            silenceWelfareLatched = false;
+            if (silenceWatchInterval) clearInterval(silenceWatchInterval);
+            silenceWatchInterval = setInterval(tickSilenceWelfare, 10000);
             document.getElementById('stopBtn').disabled = false;
             updateStatus('Connecting...', true);
 
@@ -2403,8 +2433,13 @@ registerProcessor('pcm-processor', PCMProcessor);
                             updateLiveMessage(userTextBuffer, false);
 
                             if (isFinal) {
-                                if (userTextBuffer.trim().length >= 2) {
-                                    addMessage(userTextBuffer.trim(), false);
+                                const trimmed = userTextBuffer.trim();
+                                if (trimmed.length >= 1 && !trimmed.includes('[SYSTEM]')) {
+                                    lastUserFinalSpeechAt = Date.now();
+                                    silenceWelfareLatched = false;
+                                }
+                                if (trimmed.length >= 2) {
+                                    addMessage(trimmed, false);
                                 }
                                 userTextBuffer = "";
                                 currentUserMessage = null;
@@ -2607,50 +2642,67 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
-        async function stopInterview() {
-            playClickSound('end');
-            await submitPendingTranscript();
-            if (videoInterval) clearInterval(videoInterval);
-            if (timerInterval) clearInterval(timerInterval);
-            ws?.close();
-            stopAudioStream();
-            document.getElementById('startBtn').disabled = false;
-            document.getElementById('stopBtn').disabled = true;
-            isActive = false;
-
-            // Hide fullscreen warning if visible
-            document.getElementById('fullscreenWarning').classList.remove('active');
-
-            // Exit fullscreen mode
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(() => { });
-            }
-
-            // Hide and reset timer
-            const timerEl = document.getElementById('interviewTimer');
-            timerEl.classList.remove('active', 'warning', 'critical');
-            document.getElementById('timerDisplay').textContent = '30:00';
-            interviewStartTime = null;
-
-            // Stop and save recordings (await so screen upload completes before cleanup)
+        async function stopInterview(endReason = 'manual') {
+            if (stopInterviewInProgress) return;
+            stopInterviewInProgress = true;
             try {
-                await stopRecordings();
-            } catch (e) {
-                Logger.log('warn', 'stopRecordings error', { error: e.message });
+                if (silenceWatchInterval) {
+                    clearInterval(silenceWatchInterval);
+                    silenceWatchInterval = null;
+                }
+                playClickSound('end');
+                await submitPendingTranscript();
+                if (videoInterval) clearInterval(videoInterval);
+                if (timerInterval) clearInterval(timerInterval);
+                ws?.close();
+                stopAudioStream();
+                document.getElementById('startBtn').disabled = false;
+                document.getElementById('stopBtn').disabled = true;
+                isActive = false;
+
+                document.getElementById('fullscreenWarning').classList.remove('active');
+
+                if (document.fullscreenElement) {
+                    document.exitFullscreen().catch(() => { });
+                }
+
+                const timerEl = document.getElementById('interviewTimer');
+                timerEl.classList.remove('active', 'warning', 'critical');
+                document.getElementById('timerDisplay').textContent = '30:00';
+                interviewStartTime = null;
+
+                try {
+                    await stopRecordings();
+                } catch (e) {
+                    Logger.log('warn', 'stopRecordings error', { error: e.message });
+                }
+
+                if (sharedMicStream) {
+                    sharedMicStream.getTracks().forEach(t => t.stop());
+                    sharedMicStream = null;
+                    console.log('Shared microphone stream stopped');
+                }
+
+                updateStatus('Interview Ended', false);
+
+                const titleEl = document.getElementById('completionTitleText');
+                const msgEl = document.getElementById('completionMsgText');
+                if (titleEl && msgEl) {
+                    if (endReason === 'timeout') {
+                        titleEl.textContent = "Time's up — interview submitted";
+                        msgEl.textContent = 'Your allocated time for this interview has ended. Your session has been submitted automatically. Thank you for taking part; our team will review your responses and recordings.';
+                    } else {
+                        titleEl.textContent = 'Interview Submitted';
+                        msgEl.textContent = 'Thank you for your time and effort! Your responses and session recordings have been successfully saved to our system.';
+                    }
+                }
+
+                const el = document.getElementById('interviewComplete');
+                if (el) el.classList.add('active');
+                startCompletionCelebration();
+            } finally {
+                stopInterviewInProgress = false;
             }
-
-            // Stop shared mic stream at the very end
-            if (sharedMicStream) {
-                sharedMicStream.getTracks().forEach(t => t.stop());
-                sharedMicStream = null;
-                console.log('Shared microphone stream stopped');
-            }
-
-            updateStatus('Interview Ended', false);
-
-            // Show the interview completion page
-            const el = document.getElementById('interviewComplete'); if (el) el.classList.add('active');
-            startCompletionCelebration();
         }
 
         // --- Fullscreen Enforcement ---
