@@ -12,11 +12,18 @@ from datetime import datetime, timedelta
 import time
 from collections import deque
 import uuid
+import io
 from pathlib import Path
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part
 from pydantic import BaseModel
 import httpx
+
+from transcript_service import (
+    normalize_live_messages,
+    run_user_audio_post_process,
+    store_pending_live_transcript,
+)
 
 load_dotenv(override=True)
 
@@ -33,6 +40,14 @@ LAMBDA_SESSION_URL = os.getenv(
 print(f"[STARTUP] APP_ENV={APP_ENV}")
 print(f"[STARTUP] LAMBDA_SESSION_URL={LAMBDA_SESSION_URL}")
 
+# Tavus-style screen recordings (Step Function lists tavus/{conversation_id}/)
+TAVUS_RECORDINGS_BUCKET = (
+    os.getenv("TAVUS_RECORDINGS_BUCKET") or os.getenv("EDY_TAVUS_BUCKET") or "edy-tavus"
+).strip()
+print(f"[STARTUP] TAVUS_RECORDINGS_BUCKET={TAVUS_RECORDINGS_BUCKET}")
+# Optional GET URL (edy-apis etc.) — same query params as Lambda: user_id, video_token, assessment_result_id
+CONVERSATION_RESOLVE_URL = (os.getenv("CONVERSATION_RESOLVE_URL") or "").strip()
+
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_DIR = BASE_DIR / "logs"
@@ -40,7 +55,7 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # Backend Logger (app.log)
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler(LOG_DIR / "app.log"),
@@ -178,6 +193,110 @@ DEFAULT_INTERVIEW_STRUCTURE = """
 
 6. Close the interview professionally
 """
+
+
+async def fetch_lambda_session_response(
+    user_id: str, video_token: str,
+) -> tuple[dict | None, int | None, str]:
+    """Lambda session lookup. Returns (json_or_none, http_status_or_none, error_body_snippet)."""
+    if not (user_id or "").strip() or not (video_token or "").strip():
+        return None, None, ""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                LAMBDA_SESSION_URL,
+                params={"user_id": user_id.strip(), "video_token": video_token.strip()},
+            )
+            if resp.status_code == 200:
+                return resp.json(), 200, ""
+            logger.warning(
+                "Lambda session lookup non-200: status=%s user_id=%s",
+                resp.status_code,
+                user_id,
+            )
+            return None, resp.status_code, (resp.text or "")[:200]
+    except Exception as e:
+        logger.warning("fetch_lambda_session_response error: %s", e)
+        return None, None, str(e)[:200]
+
+
+async def fetch_lambda_session_json(user_id: str, video_token: str) -> dict | None:
+    """Session document from Lambda (same as /api/config lookup)."""
+    data, code, _ = await fetch_lambda_session_response(user_id, video_token)
+    return data if code == 200 else None
+
+
+def extract_conversation_id_from_payload(data: dict | None) -> str | None:
+    if not data or not isinstance(data, dict):
+        return None
+    cid = data.get("conversation_id")
+    if cid is not None and str(cid).strip():
+        return str(cid).strip()
+    for nested_key in ("assessment_result", "assessment_result_data", "data"):
+        nested = data.get(nested_key)
+        if isinstance(nested, dict):
+            cid = nested.get("conversation_id")
+            if cid is not None and str(cid).strip():
+                return str(cid).strip()
+    return None
+
+
+def _session_assessment_result_id_matches(payload: dict, submitted_assessment_result_id: str) -> bool:
+    """If client sent assessment_result_id, it must match Lambda row (do not trust spoofed id)."""
+    if not (submitted_assessment_result_id or "").strip():
+        return True
+    lam_rid = str(payload.get("assessment_result_id") or "").strip()
+    if not lam_rid:
+        return True
+    return lam_rid == (submitted_assessment_result_id or "").strip()
+
+
+async def resolve_conversation_id_for_screen_upload(
+    user_id: str,
+    video_token: str,
+    assessment_result_id: str = "",
+) -> str | None:
+    """
+    Server-side only. Never use client-supplied conversation_id for S3 keys.
+    Order: Lambda session JSON → optional CONVERSATION_RESOLVE_URL.
+    """
+    payload = await fetch_lambda_session_json(user_id, video_token)
+    cid: str | None = None
+    if payload:
+        if _session_assessment_result_id_matches(payload, assessment_result_id):
+            cid = extract_conversation_id_from_payload(payload)
+        else:
+            logger.error(
+                "[Tavus] assessment_result_id mismatch vs Lambda — not using Lambda conversation_id "
+                "(submitted=%s lambda=%s)",
+                assessment_result_id,
+                payload.get("assessment_result_id"),
+            )
+    if cid:
+        return cid
+
+    if CONVERSATION_RESOLVE_URL:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    CONVERSATION_RESOLVE_URL,
+                    params={
+                        "user_id": (user_id or "").strip(),
+                        "video_token": (video_token or "").strip(),
+                        "assessment_result_id": (assessment_result_id or "").strip(),
+                    },
+                )
+                if resp.status_code == 200:
+                    j = resp.json()
+                    if isinstance(j, dict):
+                        if _session_assessment_result_id_matches(j, assessment_result_id):
+                            cid2 = extract_conversation_id_from_payload(j)
+                            if cid2:
+                                return cid2
+        except Exception as e:
+            logger.warning("[Tavus] CONVERSATION_RESOLVE_URL failed: %s", e)
+
+    return None
 
 
 async def fetch_assessment_data(assessment_id: str) -> dict | None:
@@ -319,6 +438,11 @@ async def lifespan(app: FastAPI):
     logger.info(f"Log Level: {LOG_LEVEL}")
     logger.info(f"Video Support: ENABLED")
     logger.info("=" * 60)
+    try:
+        vertexai.init(project=PROJECT_ID, location=LOCATION)
+        logger.info("Vertex AI SDK initialized for STT / scoring models")
+    except Exception as e:
+        logger.warning("Vertex AI SDK init skipped or failed: %s", e)
     logger.info("Server Ready!")
     yield
     # Shutdown
@@ -648,7 +772,8 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
         "top_right_logo_url": None,
         "organization_name": "Edmyst AI",
         "assessment_id": None,
-        "assessment_result_id": None
+        "assessment_result_id": None,
+        "conversation_id": None,
     }
     debug_info = {
         "app_env": APP_ENV,
@@ -662,37 +787,43 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                LAMBDA_SESSION_URL,
-                params={"user_id": user_id, "video_token": video_token}
+        data, status, err_snip = await fetch_lambda_session_response(user_id, video_token)
+        debug_info["lambda_status"] = status
+        if data is not None:
+            defaults["assessment_id"] = data.get("assessment_id")
+            defaults["assessment_result_id"] = data.get("assessment_result_id")
+            cid = extract_conversation_id_from_payload(data)
+            if cid:
+                defaults["conversation_id"] = cid
+            if data.get("organization_name"):
+                defaults["organization_name"] = data["organization_name"]
+            if data.get("top_right_logo_url"):
+                defaults["top_right_logo_url"] = data["top_right_logo_url"]
+            logger.info(
+                "Config resolved via Lambda | env=%s user_id=%s org=%s",
+                APP_ENV,
+                user_id,
+                defaults["organization_name"],
             )
-            debug_info["lambda_status"] = resp.status_code
-
-            if resp.status_code == 200:
-                data = resp.json()
-                defaults["assessment_id"] = data.get("assessment_id")
-                defaults["assessment_result_id"] = data.get("assessment_result_id")
-                if data.get("organization_name"):
-                    defaults["organization_name"] = data["organization_name"]
-                if data.get("top_right_logo_url"):
-                    defaults["top_right_logo_url"] = data["top_right_logo_url"]
-                logger.info(
-                    "Config resolved via Lambda | env=%s user_id=%s org=%s",
-                    APP_ENV, user_id, defaults["organization_name"]
-                )
-            elif resp.status_code == 404:
-                debug_info["fallback_reason"] = "session_not_found_in_lambda"
-                logger.warning(
-                    "Config fallback: Lambda returned 404 | user_id=%s video_token=%s",
-                    user_id, video_token
-                )
-            else:
-                debug_info["fallback_reason"] = f"lambda_error_{resp.status_code}"
-                debug_info["lambda_body"] = resp.text[:200]
-                logger.error(
-                    "Config fallback: Lambda error %s | user_id=%s", resp.status_code, user_id
-                )
+        elif status == 404:
+            debug_info["fallback_reason"] = "session_not_found_in_lambda"
+            logger.warning(
+                "Config fallback: Lambda returned 404 | user_id=%s video_token=%s",
+                user_id,
+                video_token,
+            )
+        elif status is not None:
+            debug_info["fallback_reason"] = f"lambda_error_{status}"
+            debug_info["lambda_body"] = err_snip
+            logger.error(
+                "Config fallback: Lambda error %s | user_id=%s",
+                status,
+                user_id,
+            )
+        else:
+            debug_info["fallback_reason"] = "lambda_unreachable"
+            if err_snip:
+                debug_info["error"] = err_snip
     except Exception as e:
         debug_info["fallback_reason"] = "exception"
         debug_info["error"] = str(e)
@@ -946,9 +1077,6 @@ for dir_path in [AUDIO_DIR, AUDIO_USER_DIR, AUDIO_COMBINED_DIR, SCREEN_DIR, TRAN
     dir_path.mkdir(parents=True, exist_ok=True)
 
 import boto3
-from botocore.exceptions import NoCredentialsError
-
-
 
 # AWS S3 Configuration
 AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
@@ -965,6 +1093,36 @@ s3_client = boto3.client(
 )
 
 
+class TranscriptTurnModel(BaseModel):
+    role: str
+    content: str
+
+
+class PendingTranscriptRequest(BaseModel):
+    assessment_id: str = ""
+    assessment_result_id: str = ""
+    user_id: str = ""
+    video_token: str = ""
+    messages: list[TranscriptTurnModel]
+
+
+@app.post("/api/transcript/pending")
+async def post_pending_live_transcript(body: PendingTranscriptRequest):
+    """
+    Store live interview turns (user + assistant) before uploads finish.
+    Mic-audio upload triggers STT; pipeline merges with this transcript for MongoDB.
+    """
+    if not (body.video_token or "").strip():
+        raise HTTPException(status_code=400, detail="video_token is required")
+    msgs = normalize_live_messages([t.model_dump() for t in body.messages])
+    await store_pending_live_transcript(
+        (body.assessment_result_id or "").strip(),
+        body.video_token.strip(),
+        msgs,
+    )
+    return {"status": "ok", "turns_stored": len(msgs)}
+
+
 @app.post("/api/upload-recording")
 async def upload_recording(
     file: UploadFile = File(...),
@@ -975,63 +1133,146 @@ async def upload_recording(
     video_token: str = Form("")
 ):
     """
-    Upload audio or screen recording directly to S3 with session metadata.
+    Upload recordings to S3.
+    - Screen (main Tavus pipeline): s3://TAVUS_BUCKET/tavus/{conversation_id}/{ts_ms} — conversation_id from Lambda/DB only.
+    - Mic / combined / rrweb: existing ai_video_to_audio_nterview/... on AWS_S3_BUCKET.
+    User mic (`audio`) schedules background STT + transcript JSON + Mongo update.
     """
     session_id = str(uuid.uuid4())
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
     base_folder = "ai_video_to_audio_nterview"
-    
+
+    file_bytes = await file.read()
+    content_type = file.content_type or "application/octet-stream"
+
+    conversation_id: str | None = None
+    target_bucket = AWS_S3_BUCKET
+    s3_key: str
+    filename: str
+
     if recording_type == "screen":
-        subfolder = "screen"
-        extension = ".webm"
+        if not (user_id or "").strip() or not (video_token or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="user_id and video_token are required for screen recording",
+            )
+        conversation_id = await resolve_conversation_id_for_screen_upload(
+            user_id, video_token, assessment_result_id
+        )
+        if not conversation_id:
+            logger.error(
+                "[Tavus] conversation_id unresolved | assessment_result_id=%s video_token=%s user_id=%s",
+                assessment_result_id,
+                video_token,
+                user_id,
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="conversation_id could not be resolved for this session; "
+                "extend Lambda session response or set CONVERSATION_RESOLVE_URL",
+            )
+        ts_ms = int(time.time() * 1000)
+        s3_key = f"tavus/{conversation_id}/{ts_ms}"
+        target_bucket = TAVUS_RECORDINGS_BUCKET
+        filename = str(ts_ms)
+        ct_out = content_type
+        if "webm" not in (ct_out or "").lower():
+            if file_bytes[:4] == b"\x1a\x45\xdf\xa3":
+                ct_out = "video/webm"
+            elif not (ct_out or "").startswith("video/"):
+                ct_out = "video/webm"
+        content_type = ct_out
     elif recording_type == "combined_audio":
         subfolder = "combined_audio"
         extension = ".webm"
+        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
+        s3_key = f"{base_folder}/{subfolder}/{filename}"
+    elif recording_type == "rrweb":
+        subfolder = "rrweb"
+        extension = ".json"
+        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
+        s3_key = f"{base_folder}/{subfolder}/{filename}"
     else:
         subfolder = "user_audio"
         extension = ".webm"
-    
-    # Include assessment_result_id in filename for tracking
-    filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
-    s3_key = f"{base_folder}/{subfolder}/{filename}"
-    
+        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
+        s3_key = f"{base_folder}/{subfolder}/{filename}"
+
+    meta = {
+        "assessment_id": assessment_id,
+        "assessment_result_id": assessment_result_id,
+        "user_id": user_id,
+        "video_token": video_token,
+        "recording_type": recording_type,
+        "uploaded_at": datetime.now().isoformat(),
+    }
+    if conversation_id:
+        meta["conversation_id"] = conversation_id
+
     try:
-        # Add metadata tags to S3 object
         s3_client.upload_fileobj(
-            file.file,
-            AWS_S3_BUCKET,
+            io.BytesIO(file_bytes),
+            target_bucket,
             s3_key,
             ExtraArgs={
-                'ContentType': file.content_type,
-                'Metadata': {
-                    'assessment_id': assessment_id,
-                    'assessment_result_id': assessment_result_id,
-                    'user_id': user_id,
-                    'video_token': video_token,
-                    'recording_type': recording_type,
-                    'uploaded_at': datetime.now().isoformat()
-                }
-            }
+                "ContentType": content_type,
+                "Metadata": {k: str(v) for k, v in meta.items() if v is not None},
+            },
         )
-        
-        logger.info(f"Uploaded to S3: s3://{AWS_S3_BUCKET}/{s3_key} | Assessment: {assessment_result_id}")
-        
-        return {
+
+        if recording_type == "screen":
+            logger.info(
+                "[Tavus] Screen upload OK bucket=%s key=%s conversation_id=%s assessment_result_id=%s",
+                target_bucket,
+                s3_key,
+                conversation_id,
+                assessment_result_id,
+            )
+        else:
+            logger.info(
+                "Uploaded to S3: s3://%s/%s | Assessment: %s",
+                target_bucket,
+                s3_key,
+                assessment_result_id,
+            )
+
+        payload: dict = {
             "status": "success",
             "session_id": session_id,
             "filename": filename,
-            "s3_bucket": AWS_S3_BUCKET,
+            "s3_bucket": target_bucket,
             "s3_key": s3_key,
-            "s3_uri": f"s3://{AWS_S3_BUCKET}/{s3_key}",
+            "s3_uri": f"s3://{target_bucket}/{s3_key}",
             "recording_type": recording_type,
             "metadata": {
                 "assessment_id": assessment_id,
                 "assessment_result_id": assessment_result_id,
-                "user_id": user_id
-            }
+                "user_id": user_id,
+            },
         }
-        
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+            payload["tavus_recording_key"] = s3_key
+
+        if recording_type == "audio" and file_bytes:
+            asyncio.create_task(
+                run_user_audio_post_process(
+                    file_bytes,
+                    s3_client=s3_client,
+                    s3_bucket=AWS_S3_BUCKET,
+                    base_folder=base_folder,
+                    assessment_id=assessment_id,
+                    assessment_result_id=assessment_result_id,
+                    user_id=user_id,
+                    video_token=video_token,
+                    audio_s3_key=s3_key,
+                    content_type=content_type,
+                )
+            )
+            payload["transcript_pipeline"] = "scheduled"
+
+        return payload
+
     except Exception as e:
         logger.error(f"S3 Upload Error: {e}")
         raise HTTPException(status_code=500, detail=f"S3 Upload failed: {str(e)}")

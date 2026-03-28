@@ -1552,6 +1552,8 @@
         let aiTextBuffer = "", userTextBuffer = "", userIsSpeaking = false;
         let aiIsSpeaking = false;
         let networkWarned = false;
+        /** Finalized chat turns for backend STT merge + Mongo (user | assistant). */
+        let interviewTranscriptTurns = [];
 
         // Interview Timer (30 minutes = 1800 seconds)
         const INTERVIEW_DURATION = 30 * 60; // 30 minutes
@@ -1827,9 +1829,14 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 screenRecorder.onstop = async () => {
-                    if (isActive) {
+                    if (isActive || screenChunks.length > 0) {
                         const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
-                        await saveRecording(blob, 'screen');
+                        try {
+                            await saveRecording(blob, 'screen');
+                        } catch (e) {
+                            Logger.log('error', 'Screen recording upload failed', { error: e.message });
+                            console.warn('⚠️ Screen recording upload failed:', e.message);
+                        }
                     }
                 };
 
@@ -2041,10 +2048,13 @@ registerProcessor('pcm-processor', PCMProcessor);
         }
 
         function addMessage(text, isAI = true) {
+            const t = String(text || '').trim();
+            if (!t || t.includes('[SYSTEM]')) return null;
+            interviewTranscriptTurns.push({ role: isAI ? 'assistant' : 'user', content: t });
             const chat = document.getElementById('chatMessages');
             const msg = document.createElement('div');
             msg.className = `message ${isAI ? 'ai' : 'user'}`;
-            msg.innerHTML = `<div class="message-label">${isAI ? 'AI Host' : 'You'}</div><div>${text}</div>`;
+            msg.innerHTML = `<div class="message-label">${isAI ? 'AI Host' : 'You'}</div><div>${t}</div>`;
             chat.appendChild(msg);
             chat.scrollTop = chat.scrollHeight;
             return msg;
@@ -2171,6 +2181,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             assessmentResultId: null,
             userId: null,
             videoToken: null,
+            conversationId: null, // from /api/config only (display/debug; S3 path uses server-side resolve)
             language: 'english',
             enterpriseId: null,
             securityFlags: [] // Track tab switches, etc
@@ -2180,29 +2191,38 @@ registerProcessor('pcm-processor', PCMProcessor);
         function parseURLParameters() {
             const urlParams = new URLSearchParams(window.location.search);
 
-            // Fetch from URL, or apply dummy values for direct local testing
+            const userId = (urlParams.get('user_id') || '').trim();
+            const videoToken = (urlParams.get('video_token') || '').trim();
+
+            // PRODUCTION GATE: user_id and video_token are mandatory
+            if (!userId || !videoToken) {
+                console.error('❌ Missing required URL params: user_id and/or video_token');
+                Logger.log('error', 'Missing mandatory URL params', { user_id: userId, video_token: videoToken });
+                return false;
+            }
+
             sessionMetadata = {
-                assessmentId: urlParams.get('assessment_id') || 'dummy_assessment_123',
-                assessmentResultId: urlParams.get('assessment_result_id') || 'dummy_result_456',
-                userId: urlParams.get('user_id') || 'dummy_user_789',
-                videoToken: urlParams.get('video_token') || `session_${Date.now()}`,
+                assessmentId: urlParams.get('assessment_id') || '',
+                assessmentResultId: urlParams.get('assessment_result_id') || '',
+                userId: userId,
+                videoToken: videoToken,
+                conversationId: (urlParams.get('conversation_id') || '').trim() || null, // logging only; S3 uses server-side resolve
                 language: urlParams.get('language') || 'english',
-                enterpriseId: urlParams.get('enterprise_id') || 'dummy_enterprise',
+                enterpriseId: urlParams.get('enterprise_id') || '',
                 securityFlags: []
             };
 
             console.log('📊 Session Metadata:', sessionMetadata);
-
-            Logger.log('info', 'Session initialized from URL or Dummy Values', sessionMetadata);
+            Logger.log('info', 'Session initialized from URL params', sessionMetadata);
 
             return true;
         }
 
         async function fetchUIConfig() {
             try {
-                const userId = sessionMetadata.userId || 'dummy_user_789';
-                const videoToken = sessionMetadata.videoToken || 'dummy_token';
-                
+                const userId = sessionMetadata.userId;
+                const videoToken = sessionMetadata.videoToken;
+                if (!userId || !videoToken) return;
                 const response = await fetch(`${API_BASE}/api/config?user_id=${userId}&video_token=${videoToken}`);
                 if (!response.ok) return;
                 const config = await response.json();
@@ -2214,7 +2234,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                 if (config.assessment_result_id) {
                     sessionMetadata.assessmentResultId = config.assessment_result_id;
                 }
-                
+                if (config.conversation_id) {
+                    sessionMetadata.conversationId = config.conversation_id;
+                }
+
                 if (config.organization_name) {
                     const subtitleName = document.getElementById('brandSubtitleName');
                     if (subtitleName) subtitleName.innerText = config.organization_name;
@@ -2247,16 +2270,21 @@ registerProcessor('pcm-processor', PCMProcessor);
         }
 
         // Run on page load
-        window.addEventListener('DOMContentLoaded', () => {
+        window.addEventListener('DOMContentLoaded', async () => {
             const validParams = parseURLParameters();
-            fetchUIConfig();
             if (!validParams) {
-                // Disable start button if params invalid
+                // Disable start button — missing user_id or video_token
                 document.getElementById('startBtn').disabled = true;
                 const btnSpan = document.querySelector('#startBtn span:not(.material-icons)');
                 if (btnSpan) btnSpan.textContent = 'Invalid Link';
                 document.getElementById('startBtn').style.backgroundColor = '#ef4444';
+                updateStatus('Missing session params — use correct interview link', false);
+                return;
             }
+            // Disable start until config is fetched (ensures assessment_result_id matches Lambda)
+            document.getElementById('startBtn').disabled = true;
+            await fetchUIConfig();
+            document.getElementById('startBtn').disabled = false;
         });
 
         async function startInterview() {
@@ -2286,6 +2314,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
 
             isActive = true;
+            interviewTranscriptTurns = [];
             document.getElementById('stopBtn').disabled = false;
             updateStatus('Connecting...', true);
 
@@ -2556,8 +2585,31 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('waveform').classList.remove('active');
         }
 
-        function stopInterview() {
+        async function submitPendingTranscript() {
+            const vid = sessionMetadata.videoToken;
+            if (!vid || !interviewTranscriptTurns.length) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/transcript/pending`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        assessment_id: sessionMetadata.assessmentId || '',
+                        assessment_result_id: sessionMetadata.assessmentResultId || '',
+                        user_id: sessionMetadata.userId || '',
+                        video_token: vid,
+                        messages: interviewTranscriptTurns,
+                    }),
+                });
+                if (res.ok) interviewTranscriptTurns = [];
+                else Logger.log('warn', 'transcript/pending failed', { status: res.status });
+            } catch (e) {
+                Logger.log('warn', 'submitPendingTranscript', { error: e.message });
+            }
+        }
+
+        async function stopInterview() {
             playClickSound('end');
+            await submitPendingTranscript();
             if (videoInterval) clearInterval(videoInterval);
             if (timerInterval) clearInterval(timerInterval);
             ws?.close();
@@ -2580,8 +2632,12 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('timerDisplay').textContent = '30:00';
             interviewStartTime = null;
 
-            // Stop and save recordings
-            stopRecordings();
+            // Stop and save recordings (await so screen upload completes before cleanup)
+            try {
+                await stopRecordings();
+            } catch (e) {
+                Logger.log('warn', 'stopRecordings error', { error: e.message });
+            }
 
             // Stop shared mic stream at the very end
             if (sharedMicStream) {
