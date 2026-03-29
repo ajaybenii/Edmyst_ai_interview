@@ -1578,8 +1578,10 @@
         let audioChunks = [];
         let screenChunks = [];
         let screenStream = null;
-        /** Resolved after screen MediaRecorder onstop (display tracks stopped + optional upload kicked off) */
+        /** Resolved after MediaRecorder onstop */
         let resolveScreenRecorderStop = null;
+        let resolveAudioRecorderStop = null;
+        let resolveCombinedRecorderStop = null;
         let isRecordingAudio = false;
         let isRecordingScreen = false;
         let sessionId = null;
@@ -1708,8 +1710,15 @@ registerProcessor('pcm-processor', PCMProcessor);
                         if (e.data.size > 0) audioChunks.push(e.data);
                     };
                     rec.onstop = async () => {
-                        const blob = new Blob(audioChunks, { type: rec.mimeType || 'audio/webm' });
-                        await saveRecording(blob, 'audio');
+                        try {
+                            const blob = new Blob(audioChunks, { type: rec.mimeType || 'audio/webm' });
+                            await saveRecording(blob, 'audio');
+                        } finally {
+                            if (resolveAudioRecorderStop) {
+                                resolveAudioRecorderStop();
+                                resolveAudioRecorderStop = null;
+                            }
+                        }
                     };
                 };
 
@@ -1799,10 +1808,17 @@ registerProcessor('pcm-processor', PCMProcessor);
                     if (e.data.size > 0) combinedChunks.push(e.data);
                 };
                 combinedRecorder.onstop = async () => {
-                    // Must not gate on isActive — stopInterview sets isActive=false before stop() fires this callback
-                    if (combinedChunks.length > 0) {
-                        const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
-                        if (blob.size > 0) await saveRecording(blob, 'combined_audio');
+                    try {
+                        // Must not gate on isActive — stopInterview sets isActive=false before stop() fires this callback
+                        if (combinedChunks.length > 0) {
+                            const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
+                            if (blob.size > 0) await saveRecording(blob, 'combined_audio');
+                        }
+                    } finally {
+                        if (resolveCombinedRecorderStop) {
+                            resolveCombinedRecorderStop();
+                            resolveCombinedRecorderStop = null;
+                        }
                     }
                 };
                 combinedRecorder.start(1000);
@@ -1828,6 +1844,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 screenRecorder.onstop = async () => {
+                    await new Promise(r => setTimeout(r, 400)); // allow last chunk to arrive
                     try {
                         const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
                         if (blob.size === 0) {
@@ -1869,85 +1886,101 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         // Stop recordings  
         async function stopRecordings() {
+            const uploadPromises = [];
+
             if (audioRecorder && audioRecorder.state !== 'inactive') {
+                uploadPromises.push(new Promise(r => resolveAudioRecorderStop = r));
                 audioRecorder.stop();
                 isRecordingAudio = false;
             }
-            if (screenRecorder && screenRecorder.state !== 'inactive') {
-                const screenWait = new Promise((resolve) => {
-                    resolveScreenRecorderStop = resolve;
-                });
-                screenRecorder.stop();
-                // Do not stop display tracks here — onstop stops them after the final webm chunk is assembled
-                await screenWait;
-                isRecordingScreen = false;
-            }
-            // Stop combined audio recorder (AI + User)
             if (combinedRecorder && combinedRecorder.state !== 'inactive') {
+                uploadPromises.push(new Promise(r => resolveCombinedRecorderStop = r));
                 combinedRecorder.stop();
             }
-            // Stop rrweb if mobile
+            if (screenRecorder && screenRecorder.state !== 'inactive') {
+                uploadPromises.push(new Promise(r => resolveScreenRecorderStop = r));
+                screenRecorder.stop();
+                isRecordingScreen = false;
+            }
             if (rrwebStopFn) {
                 rrwebStopFn(); // stop recording DOM
                 const rrwebBlob = new Blob([JSON.stringify(rrwebEvents)], { type: 'application/json' });
-                await saveRecording(rrwebBlob, 'rrweb');
+                uploadPromises.push(saveRecording(rrwebBlob, 'rrweb'));
                 isRecordingScreen = false;
             }
+
+            await Promise.all(uploadPromises);
         }
 
         // Save recording locally and upload
-        async function saveRecording(blob, type) {
+        async function saveRecording(blob, type, maxRetries = 3) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const ext = type === 'rrweb' ? 'json' : 'webm';
             const filename = `interview_${type}_${timestamp}.${ext}`;
 
-            try {
-                const formData = new FormData();
-                formData.append('file', blob, filename);
-                formData.append('recording_type', type);
+            const formData = new FormData();
+            formData.append('file', blob, filename);
+            formData.append('recording_type', type);
 
-                // ✅ ADD: Session metadata
-                formData.append('assessment_id', sessionMetadata.assessmentId || '');
-                formData.append('assessment_result_id', sessionMetadata.assessmentResultId || '');
-                formData.append('user_id', sessionMetadata.userId || '');
-                formData.append('video_token', sessionMetadata.videoToken || '');
-                if (type === 'screen' && sessionMetadata.conversationId) {
-                    formData.append('conversation_id', sessionMetadata.conversationId);
-                }
+            // ✅ ADD: Session metadata
+            formData.append('assessment_id', sessionMetadata.assessmentId || '');
+            formData.append('assessment_result_id', sessionMetadata.assessmentResultId || '');
+            formData.append('user_id', sessionMetadata.userId || '');
+            formData.append('video_token', sessionMetadata.videoToken || '');
+            if (type === 'screen' && sessionMetadata.conversationId) {
+                formData.append('conversation_id', sessionMetadata.conversationId);
+            }
 
-                const response = await fetch(`${API_BASE}/api/upload-recording`, {
-                    method: 'POST',
-                    body: formData
-                });
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/upload-recording`, {
+                        method: 'POST',
+                        body: formData
+                    });
 
-                const raw = await response.text();
-                if (response.ok) {
-                    let data;
-                    try {
-                        data = JSON.parse(raw);
-                    } catch {
-                        console.error(`Upload ${type}: response was not JSON`, raw.slice(0, 300));
+                    const raw = await response.text();
+                    if (response.ok) {
+                        let data;
+                        try {
+                            data = JSON.parse(raw);
+                        } catch {
+                            console.error(`Upload ${type}: response was not JSON`, raw.slice(0, 300));
+                            return;
+                        }
+                        sessionId = data.session_id;
+                        console.log(`${type} recording uploaded:`, data);
                         return;
                     }
-                    sessionId = data.session_id;
-                    console.log(`${type} recording uploaded:`, data);
-                    return;
-                }
-                let detail = raw;
-                try {
-                    const j = JSON.parse(raw);
-                    if (j && j.detail !== undefined) {
-                        detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+                    let detail = raw;
+                    try {
+                        const j = JSON.parse(raw);
+                        if (j && j.detail !== undefined) {
+                            detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+                        }
+                    } catch (_) { /* plain text body */ }
+
+                    if (response.status >= 500 && attempt < maxRetries) {
+                        Logger.log('warn', `Recording upload ${type} failed (${response.status}), retrying...`, { attempt });
+                        await new Promise(r => setTimeout(r, Math.random() * 1000 + (attempt * 1000)));
+                        continue;
                     }
-                } catch (_) { /* plain text body */ }
-                Logger.log('error', 'Recording upload rejected', {
-                    type,
-                    status: response.status,
-                    detail: String(detail).slice(0, 500),
-                });
-                console.error(`Upload ${type} failed (${response.status}):`, detail);
-            } catch (e) {
-                console.error(`Upload ${type} error:`, e);
+
+                    Logger.log('error', 'Recording upload rejected', {
+                        type,
+                        status: response.status,
+                        detail: String(detail).slice(0, 500),
+                    });
+                    console.error(`Upload ${type} failed (${response.status}):`, detail);
+                    return;
+                } catch (e) {
+                    console.warn(`Upload ${type} error (attempt ${attempt}):`, e);
+                    if (attempt < maxRetries) {
+                        await new Promise(r => setTimeout(r, Math.random() * 1000 + (attempt * 1000)));
+                    } else {
+                        console.error(`Upload ${type} ultimately failed after ${maxRetries} attempts:`, e);
+                        Logger.log('error', `Upload ${type} completely failed`, { error: String(e) });
+                    }
+                }
             }
         }
 
