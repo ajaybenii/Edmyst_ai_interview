@@ -1697,51 +1697,35 @@ registerProcessor('pcm-processor', PCMProcessor);
                     return;
                 }
 
-                const options = {};
-                const mimeType = getSupportedMimeType('audio');
-                if (mimeType) options.mimeType = mimeType;
-
-                console.log('Initializing MediaRecorder with options:', options);
-
-                try {
-                    audioRecorder = new MediaRecorder(sharedMicStream, options);
-                } catch (e) {
-                    console.warn('Failed to create MediaRecorder with options, trying default:', e);
-                    audioRecorder = new MediaRecorder(sharedMicStream);
-                }
-
                 audioChunks = [];
 
-                audioRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) audioChunks.push(e.data);
+                const bindAudioRecorder = (rec) => {
+                    rec.ondataavailable = (e) => {
+                        if (e.data.size > 0) audioChunks.push(e.data);
+                    };
+                    rec.onstop = async () => {
+                        const blob = new Blob(audioChunks, { type: rec.mimeType || 'audio/webm' });
+                        await saveRecording(blob, 'audio');
+                    };
                 };
 
-                audioRecorder.onstop = async () => {
-                    const blob = new Blob(audioChunks, { type: audioRecorder.mimeType || 'audio/webm' });
-                    await saveRecording(blob, 'audio');
-                };
-
+                // Browser-default codec first — Chrome/macOS often reports audio/webm supported then throws NotSupportedError on start()
                 try {
-                    audioRecorder.start(1000); // Capture every 1 second
+                    audioRecorder = new MediaRecorder(sharedMicStream);
+                    bindAudioRecorder(audioRecorder);
+                    audioRecorder.start(1000);
                     isRecordingAudio = true;
-                    console.log('Audio recording started successfully');
+                    console.log('Audio recording started (browser default)');
                 } catch (startError) {
-                    console.warn('MediaRecorder.start() failed, retrying with default settings:', startError);
-                    Logger.log('warn', 'MediaRecorder.start failed, retrying without mimeType', { error: startError.message });
-
-                    // Retry without options
+                    const mimeType = getSupportedMimeType('audio');
+                    const options = mimeType ? { mimeType } : {};
+                    Logger.log('warn', 'MediaRecorder default start failed, retrying with mimeType', { error: startError.message, mimeType: mimeType || '(none)' });
                     try {
-                        audioRecorder = new MediaRecorder(sharedMicStream);
-                        audioRecorder.ondataavailable = (e) => {
-                            if (e.data.size > 0) audioChunks.push(e.data);
-                        };
-                        audioRecorder.onstop = async () => {
-                            const blob = new Blob(audioChunks, { type: audioRecorder.mimeType || 'audio/webm' });
-                            await saveRecording(blob, 'audio');
-                        };
+                        audioRecorder = new MediaRecorder(sharedMicStream, options);
+                        bindAudioRecorder(audioRecorder);
                         audioRecorder.start(1000);
                         isRecordingAudio = true;
-                        console.log('Audio recording started on retry (default settings)');
+                        console.log('Audio recording started on retry (explicit mimeType)');
                     } catch (retryError) {
                         Logger.log('error', 'Audio recording retry failed:', { error: retryError.message });
                     }
@@ -2485,13 +2469,21 @@ registerProcessor('pcm-processor', PCMProcessor);
                     updateStatus('Connection Error', false);
                 };
                 ws.onclose = (e) => {
-                    const reason = `WebSocket Closed: Code=${e.code}, Reason=${e.reason}, Clean=${e.wasClean}`;
-                    console.warn(reason);
-                    Logger.log('error', 'WebSocket Closed', { code: e.code, reason: e.reason, wasClean: e.wasClean });
-
+                    const payload = { code: e.code, reason: e.reason, wasClean: e.wasClean };
+                    const normalClientClose = e.wasClean && (e.code === 1000 || e.code === 1005);
+                    if (normalClientClose) {
+                        console.log('WebSocket closed', payload);
+                        Logger.log('info', 'WebSocket Closed', payload);
+                    } else {
+                        console.warn(`WebSocket Closed: Code=${e.code}, Reason=${e.reason}, Clean=${e.wasClean}`);
+                        Logger.log('error', 'WebSocket Closed', payload);
+                    }
                     updateStatus('Interview Ended', false);
                     isActive = false;
-                    stopAudioStream();
+                    // stopInterview owns full teardown (after stopRecordings). Calling stopAudioStream here too double-closes AudioContexts and can stop tracks before final recorder chunks.
+                    if (!stopInterviewInProgress) {
+                        stopAudioStream();
+                    }
                 };
 
             } catch (e) {
@@ -2629,10 +2621,32 @@ registerProcessor('pcm-processor', PCMProcessor);
         }
 
         function stopAudioStream() {
-            mediaStream?.getTracks().forEach(t => t.stop());
-            processor?.disconnect();
-            audioContext?.close();
-            playbackContext?.close();
+            if (audioCheckInterval) {
+                clearInterval(audioCheckInterval);
+                audioCheckInterval = null;
+            }
+            try {
+                mediaStream?.getTracks().forEach(t => t.stop());
+            } catch (_) { /* track may already be ended */ }
+            try {
+                processor?.disconnect();
+            } catch (_) { }
+            processor = null;
+
+            const ac = audioContext;
+            audioContext = null;
+            if (ac && ac.state !== 'closed') {
+                ac.close().catch(() => { });
+            }
+
+            const pc = playbackContext;
+            playbackContext = null;
+            recordingDestination = null;
+            if (pc && pc.state !== 'closed') {
+                pc.close().catch(() => { });
+            }
+
+            nextPlayTime = 0;
             setListening(false);
             document.getElementById('aiOrb').classList.remove('speaking');
             document.getElementById('waveform').classList.remove('active');
