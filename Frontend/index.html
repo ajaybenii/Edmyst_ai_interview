@@ -1931,6 +1931,37 @@ registerProcessor('pcm-processor', PCMProcessor);
                 formData.append('conversation_id', sessionMetadata.conversationId);
             }
 
+            // ============================================
+            // 🐛 DEBUG LOGIC: Download recording locally to verify blob integrity
+            // ============================================
+            const _DEBUG_LOCAL_DOWNLOAD = true; // Set to true to download files on stop
+            const _DEBUG_SKIP_UPLOAD = false; // Set to true to completely stop S3 uploads
+            
+            if (_DEBUG_LOCAL_DOWNLOAD) {
+                try {
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `DEBUG_${filename}`;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(a.href);
+                    }, 1000);
+                    console.log(`[DEBUG] Downloaded ${type} recording locally. Size: ${blob.size} bytes`);
+                } catch (e) {
+                    console.warn(`[DEBUG] Failed to trigger local download for ${type}`, e);
+                }
+            }
+
+            if (_DEBUG_SKIP_UPLOAD) {
+                console.log(`[DEBUG] Skipping upload for ${type} because _DEBUG_SKIP_UPLOAD is true.`);
+                if (type === 'audio' && typeof resolveAudioRecorderStop === 'function') resolveAudioRecorderStop();
+                return;
+            }
+            // ============================================
+
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
                     const response = await fetch(`${API_BASE}/api/upload-recording`, {
