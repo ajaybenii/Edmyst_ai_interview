@@ -44,9 +44,15 @@ print(f"[STARTUP] LAMBDA_SESSION_URL={LAMBDA_SESSION_URL}")
 TAVUS_RECORDINGS_BUCKET = (
     os.getenv("TAVUS_RECORDINGS_BUCKET") or os.getenv("EDY_TAVUS_BUCKET") or "edy-tavus"
 ).strip()
-print(f"[STARTUP] TAVUS_RECORDINGS_BUCKET={TAVUS_RECORDINGS_BUCKET}")
 # Optional GET URL (edy-apis etc.) — same query params as Lambda: user_id, video_token, assessment_result_id
 CONVERSATION_RESOLVE_URL = (os.getenv("CONVERSATION_RESOLVE_URL") or "").strip()
+# Dev / broken Lambda only: accept multipart conversation_id for tavus/ screen key when server cannot resolve from Lambda
+ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD = os.getenv(
+    "ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD", ""
+).strip().lower() in ("1", "true", "yes")
+print(f"[STARTUP] TAVUS_RECORDINGS_BUCKET={TAVUS_RECORDINGS_BUCKET}")
+if ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD:
+    print("[STARTUP] ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD=1 (screen S3 key may use form conversation_id if Lambda unresolved)")
 
 # Edy candidate API (POST /update/assessment_result) — used by /api/edy/assessment-complete proxy for Netlify player CORS
 EDY_CANDIDATE_API_BASE = (os.getenv("EDY_CANDIDATE_API_BASE") or "").strip()
@@ -245,6 +251,13 @@ async def fetch_lambda_session_json(user_id: str, video_token: str) -> dict | No
     """Session document from Lambda (same as /api/config lookup)."""
     data, code, _ = await fetch_lambda_session_response(user_id, video_token)
     return data if code == 200 else None
+
+
+def _plausible_conversation_id(cid: str) -> bool:
+    s = (cid or "").strip()
+    if len(s) < 8 or len(s) > 200:
+        return False
+    return all(c.isalnum() or c in "-_" for c in s)
 
 
 def extract_conversation_id_from_payload(data: dict | None) -> str | None:
@@ -1176,7 +1189,8 @@ async def upload_recording(
     assessment_id: str = Form(""),
     assessment_result_id: str = Form(""),
     user_id: str = Form(""),
-    video_token: str = Form("")
+    video_token: str = Form(""),
+    client_conversation_id: str = Form("", alias="conversation_id"),
 ):
     """
     Upload recordings to S3.
@@ -1209,6 +1223,19 @@ async def upload_recording(
         conversation_id = await resolve_conversation_id_for_screen_upload(
             user_id, video_token, assessment_result_id
         )
+        if not conversation_id and ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD:
+            cand = (client_conversation_id or "").strip()
+            if cand and _plausible_conversation_id(cand):
+                conversation_id = cand
+                logger.warning(
+                    "[Tavus] Using client conversation_id for screen S3 key (ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD) "
+                    "assessment_result_id=%s",
+                    assessment_result_id,
+                )
+                render_log(
+                    f"UPLOAD_SCREEN_CLIENT_CID_FALLBACK conversation_id={conversation_id!r} "
+                    f"assessment_result_id={assessment_result_id!r}"
+                )
         if not conversation_id:
             logger.error(
                 "[Tavus] conversation_id unresolved | assessment_result_id=%s video_token=%s user_id=%s",
@@ -1223,7 +1250,8 @@ async def upload_recording(
             raise HTTPException(
                 status_code=400,
                 detail="conversation_id could not be resolved for this session; "
-                "extend Lambda session response or set CONVERSATION_RESOLVE_URL",
+                "fix Lambda session JSON, set CONVERSATION_RESOLVE_URL, or for dev only set "
+                "ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD=1 and pass conversation_id in the form",
             )
         ts_ms = int(time.time() * 1000)
         s3_key = f"tavus/{conversation_id}/{ts_ms}"

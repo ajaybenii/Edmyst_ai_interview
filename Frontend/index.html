@@ -1262,6 +1262,8 @@
         const API_BASE = 'https://edmyst-ai-interview.onrender.com';
         /** Optional: set on Netlify via inline script before bundle — direct POST to API Gateway; if unset, only Render proxy is used */
         const EDY_CANDIDATE_API_BASE = (typeof window !== 'undefined' && window.__EDY_CANDIDATE_API_BASE__) || '';
+        /** postMessage targetOrigin for Amplify parent; set window.__EDY_PARENT_POSTMESSAGE_ORIGIN__ e.g. 'https://dev....amplifyapp.com' — '*' if unset */
+        const EDY_PARENT_POSTMESSAGE_ORIGIN = (typeof window !== 'undefined' && window.__EDY_PARENT_POSTMESSAGE_ORIGIN__) || '*';
 
         // Real speed test using Cloudflare CDN (runs at page load for accuracy)
         async function realSpeedTest() {
@@ -1576,6 +1578,8 @@
         let audioChunks = [];
         let screenChunks = [];
         let screenStream = null;
+        /** Resolved after screen MediaRecorder onstop (display tracks stopped + optional upload kicked off) */
+        let resolveScreenRecorderStop = null;
         let isRecordingAudio = false;
         let isRecordingScreen = false;
         let sessionId = null;
@@ -1824,13 +1828,26 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 screenRecorder.onstop = async () => {
-                    if (isActive || screenChunks.length > 0) {
+                    try {
                         const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
+                        if (blob.size === 0) {
+                            Logger.log('warn', 'Screen recording skipped: empty blob (check display capture + MediaRecorder flush)');
+                            return;
+                        }
                         try {
                             await saveRecording(blob, 'screen');
                         } catch (e) {
                             Logger.log('error', 'Screen recording upload failed', { error: e.message });
-                            console.warn('⚠️ Screen recording upload failed:', e.message);
+                            console.error('Screen recording upload failed:', e);
+                        }
+                    } finally {
+                        try {
+                            screenStream?.getTracks().forEach(t => t.stop());
+                        } catch (_) { /* already ended */ }
+                        screenStream = null;
+                        if (resolveScreenRecorderStop) {
+                            resolveScreenRecorderStop();
+                            resolveScreenRecorderStop = null;
                         }
                     }
                 };
@@ -1857,8 +1874,12 @@ registerProcessor('pcm-processor', PCMProcessor);
                 isRecordingAudio = false;
             }
             if (screenRecorder && screenRecorder.state !== 'inactive') {
+                const screenWait = new Promise((resolve) => {
+                    resolveScreenRecorderStop = resolve;
+                });
                 screenRecorder.stop();
-                screenStream?.getTracks().forEach(t => t.stop());
+                // Do not stop display tracks here — onstop stops them after the final webm chunk is assembled
+                await screenWait;
                 isRecordingScreen = false;
             }
             // Stop combined audio recorder (AI + User)
@@ -1890,17 +1911,41 @@ registerProcessor('pcm-processor', PCMProcessor);
                 formData.append('assessment_result_id', sessionMetadata.assessmentResultId || '');
                 formData.append('user_id', sessionMetadata.userId || '');
                 formData.append('video_token', sessionMetadata.videoToken || '');
+                if (type === 'screen' && sessionMetadata.conversationId) {
+                    formData.append('conversation_id', sessionMetadata.conversationId);
+                }
 
                 const response = await fetch(`${API_BASE}/api/upload-recording`, {
                     method: 'POST',
                     body: formData
                 });
 
+                const raw = await response.text();
                 if (response.ok) {
-                    const data = await response.json();
+                    let data;
+                    try {
+                        data = JSON.parse(raw);
+                    } catch {
+                        console.error(`Upload ${type}: response was not JSON`, raw.slice(0, 300));
+                        return;
+                    }
                     sessionId = data.session_id;
                     console.log(`${type} recording uploaded:`, data);
+                    return;
                 }
+                let detail = raw;
+                try {
+                    const j = JSON.parse(raw);
+                    if (j && j.detail !== undefined) {
+                        detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail);
+                    }
+                } catch (_) { /* plain text body */ }
+                Logger.log('error', 'Recording upload rejected', {
+                    type,
+                    status: response.status,
+                    detail: String(detail).slice(0, 500),
+                });
+                console.error(`Upload ${type} failed (${response.status}):`, detail);
             } catch (e) {
                 console.error(`Upload ${type} error:`, e);
             }
@@ -2655,6 +2700,7 @@ registerProcessor('pcm-processor', PCMProcessor);
         /**
          * Mark assessment Completed in Edy (Mongo / recruiter UI) — mirrors Step9 + CVI ai_interview joined payload.
          * Direct POST to execute-api if EDY_CANDIDATE_API_BASE / __EDY_CANDIDATE_API_BASE__ set; else POST Render proxy (avoids CORS).
+         * @returns {Promise<boolean>} true if execute-api or proxy returned OK
          */
         async function notifyEdyAssessmentComplete(reason) {
             const rid = sessionMetadata.assessmentResultId;
@@ -2662,7 +2708,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             const vt = sessionMetadata.videoToken;
             if (!rid || !uid || !vt) {
                 console.warn('[Edy] notifyEdyAssessmentComplete skipped — missing assessmentResultId, userId, or videoToken', { reason, rid, uid, vt });
-                return;
+                return false;
             }
             const completion_date = new Date().toLocaleDateString('en-US', {
                 year: 'numeric',
@@ -2699,34 +2745,31 @@ registerProcessor('pcm-processor', PCMProcessor);
                 }
             };
 
-            if (EDY_CANDIDATE_API_BASE) {
-                try {
-                    const url = `${String(EDY_CANDIDATE_API_BASE).replace(/\/$/, '')}/update/assessment_result?${qs.toString()}`;
-                    const r = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(completionPayload),
-                    });
-                    if (!r.ok) {
-                        const t = await r.text().catch(() => '');
-                        throw new Error(`direct ${r.status} ${t.slice(0, 200)}`);
-                    }
-                } catch (e) {
-                    console.warn('[Edy] direct notify failed, trying Render proxy', reason, e);
+            try {
+                if (EDY_CANDIDATE_API_BASE) {
                     try {
+                        const url = `${String(EDY_CANDIDATE_API_BASE).replace(/\/$/, '')}/update/assessment_result?${qs.toString()}`;
+                        const r = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(completionPayload),
+                        });
+                        if (!r.ok) {
+                            const t = await r.text().catch(() => '');
+                            throw new Error(`direct ${r.status} ${t.slice(0, 200)}`);
+                        }
+                    } catch (e) {
+                        console.warn('[Edy] direct notify failed, trying Render proxy', reason, e);
                         await postViaProxy();
-                    } catch (e2) {
-                        console.warn('[Edy] proxy notify failed — UI will still show submitted', reason, e2);
-                        Logger.log('warn', 'Edy assessment-complete failed', { reason, error: String(e2) });
                     }
-                }
-            } else {
-                try {
+                } else {
                     await postViaProxy();
-                } catch (e) {
-                    console.warn('[Edy] proxy notify failed — UI will still show submitted', reason, e);
-                    Logger.log('warn', 'Edy assessment-complete failed', { reason, error: String(e) });
                 }
+                return true;
+            } catch (e) {
+                console.warn('[Edy] assessment-complete failed — UI will still show submitted', reason, e);
+                Logger.log('warn', 'Edy assessment-complete failed', { reason, error: String(e) });
+                return false;
             }
         }
 
@@ -2790,10 +2833,21 @@ registerProcessor('pcm-processor', PCMProcessor);
                 stopAudioStream();
 
                 // Recruiter / Mongo: Completed (after transcript + uploads; failures only log — user still sees success UI)
+                let edyCompletionNotifyOk = false;
                 try {
-                    await notifyEdyAssessmentComplete(endReason);
+                    edyCompletionNotifyOk = await notifyEdyAssessmentComplete(endReason);
                 } catch (e) {
                     console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
+                }
+                if (edyCompletionNotifyOk) {
+                    try {
+                        if (window.parent && window.parent !== window) {
+                            window.parent.postMessage(
+                                { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
+                                EDY_PARENT_POSTMESSAGE_ORIGIN
+                            );
+                        }
+                    } catch (e) { /* ignore */ }
                 }
 
                 if (sharedMicStream) {
