@@ -13,6 +13,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _render(msg: str) -> None:
+    print(f"[RENDER] {msg}", flush=True)
+
+
 PENDING_LOCK = asyncio.Lock()
 # key -> list[{"role","content"}]
 PENDING_LIVE_TRANSCRIPTS: dict[str, list[dict[str, str]]] = {}
@@ -246,6 +251,10 @@ async def run_user_audio_post_process(
     content_type: str,
 ) -> None:
     try:
+        _render(
+            f"STT_PIPELINE_START bytes={len(audio_bytes)} audio_s3_key={audio_s3_key!r} "
+            f"assessment_result_id={assessment_result_id!r}"
+        )
         live = await pop_pending_live_transcript(assessment_result_id, video_token)
         mime = "audio/webm"
         if "mpeg" in (content_type or "").lower() or (audio_bytes[:3] == b"ID3"):
@@ -256,10 +265,11 @@ async def run_user_audio_post_process(
         stt_text = await asyncio.to_thread(transcribe_user_audio_bytes_sync, audio_bytes, mime)
         if not stt_text:
             logger.warning("[Transcript] STT returned empty (audio_s3_key=%s)", audio_s3_key)
+        _render(f"STT_DONE chars={len(stt_text)} live_turns={len(live)}")
 
         merged = merge_live_transcript_with_user_stt(live, stt_text)
 
-        await asyncio.to_thread(
+        comm_key = await asyncio.to_thread(
             put_s3_communication_json_sync,
             s3_client,
             s3_bucket,
@@ -269,12 +279,15 @@ async def run_user_audio_post_process(
             video_token,
             stt_text,
         )
+        _render(f"TRANSCRIPT_JSON_S3 key={comm_key}")
 
-        await asyncio.to_thread(
+        ok = await asyncio.to_thread(
             mongo_set_transcript_sync,
             merged,
             assessment_result_id,
             video_token,
         )
+        _render(f"STT_PIPELINE_END mongo_updated={ok} merged_turns={len(merged)}")
     except Exception:
         logger.exception("[Transcript] Post-process failed audio_s3_key=%s", audio_s3_key)
+        _render(f"STT_PIPELINE_FAIL audio_s3_key={audio_s3_key!r}")

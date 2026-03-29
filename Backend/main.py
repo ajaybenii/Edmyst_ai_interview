@@ -64,7 +64,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+def render_log(msg: str) -> None:
+    """Stdout + flush — Render dashboard par clearly dikhe (logger ke alawa)."""
+    print(f"[RENDER] {msg}", flush=True)
+
+
 logger.info(f"[Config] Lambda session lookup URL: {LAMBDA_SESSION_URL}")
+render_log(f"startup Lambda URL configured | APP_ENV={APP_ENV} | Tavus bucket={TAVUS_RECORDINGS_BUCKET} | S3 bucket={os.getenv('AWS_S3_BUCKET', 'edy-temp-videos')}")
 
 # Frontend Logger (frontend.log)
 frontend_logger = logging.getLogger("frontend")
@@ -323,6 +330,7 @@ async def fetch_assessment_data(assessment_id: str) -> dict | None:
                 return data
             else:
                 logger.warning(f"[Prompt] Lambda returned {resp.status_code} for assessment_id={assessment_id}")
+                render_log(f"PROMPT_LAMBDA_FAIL status={resp.status_code} assessment_id={assessment_id}")
                 return None
     except Exception as e:
         logger.error(f"[Prompt] Failed to fetch assessment data: {e}")
@@ -452,9 +460,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Vertex AI SDK init skipped or failed: %s", e)
     logger.info("Server Ready!")
+    render_log("=== SERVER READY (interview API) ===")
     yield
     # Shutdown
     logger.info("Server shutting down...")
+    render_log("=== SERVER SHUTDOWN ===")
 
 # Initialize FastAPI
 app = FastAPI(
@@ -684,7 +694,8 @@ async def relay_messages(ws_client: WebSocket, ws_google, access_token: str, dyn
                     if 'goAway' in data:
                         time_left = data['goAway'].get('timeLeft', 'unknown')
                         logger.warning(f"⚠️ GoAway received! Connection closing in {time_left}. Reconnecting...")
-                        
+                        render_log(f"GEMINI_GOAWAY time_left={time_left} reconnecting")
+
                         # Mark as swapping to pause client2server sends
                         gemini["swapping"] = True
                         
@@ -703,10 +714,12 @@ async def relay_messages(ws_client: WebSocket, ws_google, access_token: str, dyn
                                 pass
                             
                             logger.info("🔄 Connection swapped. Continuing conversation...")
+                            render_log("GEMINI_RECONNECTED session resumed OK")
                             break  # Break inner loop to restart with new connection
                         else:
                             gemini["swapping"] = False
                             logger.error("Reconnection failed. Continuing with current connection...")
+                            render_log("GEMINI_RECONNECT_FAIL")
                         
                         # Don't forward goAway to frontend
                         continue
@@ -813,6 +826,10 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
                 user_id,
                 defaults["organization_name"],
             )
+            render_log(
+                f"CONFIG_OK user_id={user_id} assessment_result_id={defaults.get('assessment_result_id')} "
+                f"conversation_id={defaults.get('conversation_id')} org={defaults.get('organization_name')}"
+            )
         elif status == 404:
             debug_info["fallback_reason"] = "session_not_found_in_lambda"
             logger.warning(
@@ -895,7 +912,11 @@ async def websocket_interview(websocket: WebSocket):
     connection_id = manager.total_connections
     
     logger.info(f"Client #{connection_id} connected | Assessment: {assessment_result_id} | User: {user_id} ({manager.active_connections}/{MAX_CONCURRENT_CONNECTIONS} active)")
-    
+    render_log(
+        f"WS_OPEN conn={connection_id} user={user_id!r} assessment_result_id={assessment_result_id!r} "
+        f"assessment_id={assessment_id!r} active={manager.active_connections}"
+    )
+
     # Get cached token for better performance
     access_token = await manager.get_cached_token()
     
@@ -963,8 +984,10 @@ async def websocket_interview(websocket: WebSocket):
             
     except WebSocketDisconnect:
         logger.info(f"Client #{connection_id} disconnected")
+        render_log(f"WS_DISCONNECT conn={connection_id} reason=client_disconnect user={user_id!r}")
     except Exception as e:
         logger.error(f"Client #{connection_id} error: {e}")
+        render_log(f"WS_ERROR conn={connection_id} user={user_id!r} error={e!r}")
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception:
@@ -972,6 +995,9 @@ async def websocket_interview(websocket: WebSocket):
     finally:
         manager.remove_connection()
         logger.info(f"Client #{connection_id} session ended. Active: {manager.active_connections}/{MAX_CONCURRENT_CONNECTIONS}")
+        render_log(
+            f"WS_CLOSE conn={connection_id} user={user_id!r} active_now={manager.active_connections}"
+        )
 
 
 
@@ -1123,6 +1149,10 @@ async def post_pending_live_transcript(body: PendingTranscriptRequest):
     if not (body.video_token or "").strip():
         raise HTTPException(status_code=400, detail="video_token is required")
     msgs = normalize_live_messages([t.model_dump() for t in body.messages])
+    render_log(
+        f"TRANSCRIPT_PENDING turns={len(msgs)} assessment_result_id={(body.assessment_result_id or '').strip()!r} "
+        f"video_token={(body.video_token or '')[:16]}…"
+    )
     await store_pending_live_transcript(
         (body.assessment_result_id or "").strip(),
         body.video_token.strip(),
@@ -1152,6 +1182,10 @@ async def upload_recording(
 
     file_bytes = await file.read()
     content_type = file.content_type or "application/octet-stream"
+    render_log(
+        f"UPLOAD_START type={recording_type} bytes={len(file_bytes)} "
+        f"assessment_result_id={assessment_result_id!r} user_id={user_id!r}"
+    )
 
     conversation_id: str | None = None
     target_bucket = AWS_S3_BUCKET
@@ -1173,6 +1207,10 @@ async def upload_recording(
                 assessment_result_id,
                 video_token,
                 user_id,
+            )
+            render_log(
+                f"UPLOAD_SCREEN_FAIL no_conversation_id assessment_result_id={assessment_result_id!r} "
+                f"video_token={video_token!r}"
             )
             raise HTTPException(
                 status_code=400,
@@ -1236,12 +1274,19 @@ async def upload_recording(
                 conversation_id,
                 assessment_result_id,
             )
+            render_log(
+                f"UPLOAD_OK screen bucket={target_bucket} key={s3_key} conversation_id={conversation_id} "
+                f"bytes={len(file_bytes)}"
+            )
         else:
             logger.info(
                 "Uploaded to S3: s3://%s/%s | Assessment: %s",
                 target_bucket,
                 s3_key,
                 assessment_result_id,
+            )
+            render_log(
+                f"UPLOAD_OK type={recording_type} bucket={target_bucket} key={s3_key} bytes={len(file_bytes)}"
             )
 
         payload: dict = {
@@ -1278,11 +1323,15 @@ async def upload_recording(
                 )
             )
             payload["transcript_pipeline"] = "scheduled"
+            render_log(
+                f"TRANSCRIPT_PIPELINE_SCHEDULED audio_key={s3_key} assessment_result_id={assessment_result_id!r}"
+            )
 
         return payload
 
     except Exception as e:
         logger.error(f"S3 Upload Error: {e}")
+        render_log(f"UPLOAD_FAIL type={recording_type} error={e!r}")
         raise HTTPException(status_code=500, detail=f"S3 Upload failed: {str(e)}")
 
 
@@ -1574,6 +1623,7 @@ async def receive_frontend_log(entry: LogEntry):
     msg = f"[{entry.level.upper()}] {entry.message} | Context: {entry.context}"
     if entry.level.lower() == "error":
         frontend_logger.error(msg)
+        render_log(f"FE_ERROR {entry.message} | {entry.context}")
     elif entry.level.lower() == "warn":
         frontend_logger.warning(msg)
     else:

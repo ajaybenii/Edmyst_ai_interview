@@ -1809,9 +1809,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                     if (e.data.size > 0) combinedChunks.push(e.data);
                 };
                 combinedRecorder.onstop = async () => {
-                    if (isActive) {
+                    // Must not gate on isActive — stopInterview sets isActive=false before stop() fires this callback
+                    if (combinedChunks.length > 0) {
                         const blob = new Blob(combinedChunks, { type: combinedRecorder.mimeType || 'audio/webm' });
-                        await saveRecording(blob, 'combined_audio');
+                        if (blob.size > 0) await saveRecording(blob, 'combined_audio');
                     }
                 };
                 combinedRecorder.start(1000);
@@ -2517,6 +2518,21 @@ registerProcessor('pcm-processor', PCMProcessor);
 
 
         async function startAudioStream() {
+            // Mobile / edge: screen path never ran — still need playback + mix bus for AI audio + optional combined tap
+            if (!playbackContext) {
+                playbackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: OUTPUT_SAMPLE_RATE });
+                nextPlayTime = playbackContext.currentTime;
+                recordingDestination = playbackContext.createMediaStreamDestination();
+                if (sharedMicStream) {
+                    try {
+                        const micSource = playbackContext.createMediaStreamSource(sharedMicStream);
+                        micSource.connect(recordingDestination);
+                    } catch (e) {
+                        console.warn('playbackContext mic connect:', e);
+                    }
+                }
+            }
+
             audioContext = new AudioContext({ sampleRate: INPUT_SAMPLE_RATE });
             const source = audioContext.createMediaStreamSource(sharedMicStream);
 
