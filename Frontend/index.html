@@ -1562,7 +1562,7 @@
         /** 30m timeout: single auto-submit, no duplicate timers */
         let timeoutAutoSubmitScheduled = false;
         let fiveMinuteWarningSent = false;
-        /** ~180s without user final speech → one welfare prompt (resets when user speaks) */
+        /** ~300s (5 min) without user final speech → one welfare prompt (long answers OK; resets when user speaks) */
         let lastUserFinalSpeechAt = 0;
         let silenceWelfareLatched = false;
         let silenceWatchInterval = null;
@@ -2153,13 +2153,13 @@ registerProcessor('pcm-processor', PCMProcessor);
         function tickSilenceWelfare() {
             if (!isActive || !ws || ws.readyState !== WebSocket.OPEN) return;
             if (silenceWelfareLatched) return;
-            if (Date.now() - lastUserFinalSpeechAt < 180000) return;
+            if (Date.now() - lastUserFinalSpeechAt < 300000) return;
             silenceWelfareLatched = true;
             const lang = (sessionMetadata.language || 'english').toLowerCase();
             sendSystemMessage(
-                '[SYSTEM] Welfare check: the candidate has not spoken for about 3 minutes. ' +
+                '[SYSTEM] Welfare check: the candidate has not spoken for about 5 minutes (they may have been thinking or finishing a long answer). ' +
                 'Say exactly one short, natural sentence in the interview language (' + lang + ') — ' +
-                'kindly ask if they can hear you, need a moment, or are having an audio issue. Warm tone, not robotic.'
+                'kindly check if they can hear you, need more time, or have an audio issue. Warm tone, not robotic.'
             );
         }
 
@@ -2390,7 +2390,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                             const netMsg = networkQuality === 'poor' ? ' [SYSTEM: User has POOR network connection]' : '';
                             ws.send(JSON.stringify({
                                 clientContent: {
-                                    turns: [{ role: "user", parts: [{ text: "Start the interview with a greeting" + netMsg }] }],
+                                    turns: [{ role: "user", parts: [{ text: "Begin the session: (1) Give a brief, casual overview of the hiring organization and this role — warm and conversational, not a formal brochure. (2) Then greet by time of day. (3) Then invite the candidate to introduce themselves. Do not ask technical questions until after their introduction." + netMsg }] }],
                                     turnComplete: true
                                 }
                             }));
