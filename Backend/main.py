@@ -48,6 +48,9 @@ print(f"[STARTUP] TAVUS_RECORDINGS_BUCKET={TAVUS_RECORDINGS_BUCKET}")
 # Optional GET URL (edy-apis etc.) — same query params as Lambda: user_id, video_token, assessment_result_id
 CONVERSATION_RESOLVE_URL = (os.getenv("CONVERSATION_RESOLVE_URL") or "").strip()
 
+# Edy candidate API (POST /update/assessment_result) — used by /api/edy/assessment-complete proxy for Netlify player CORS
+EDY_CANDIDATE_API_BASE = (os.getenv("EDY_CANDIDATE_API_BASE") or "").strip()
+
 # Configure Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 LOG_DIR = BASE_DIR / "logs"
@@ -1619,6 +1622,56 @@ class LogEntry(BaseModel):
     message: str
     timestamp: str
     context: dict = {}
+
+@app.post("/api/edy/assessment-complete")
+async def edy_assessment_complete_proxy(payload: dict):
+    """
+    Forward completion payload to Edy execute-api (same contract as Step9 / CVI ai_interview).
+    Netlify static app calls this when browser CORS blocks direct POST to API Gateway.
+    """
+    rid = (payload.get("assessment_result_id") or "").strip()
+    uid = (payload.get("user_id") or "").strip()
+    vt = (payload.get("video_token") or "").strip()
+    if not rid or not uid or not vt:
+        raise HTTPException(
+            status_code=400,
+            detail="assessment_result_id, user_id, and video_token are required",
+        )
+    if not EDY_CANDIDATE_API_BASE:
+        logger.error("[Edy] EDY_CANDIDATE_API_BASE not set — cannot proxy assessment-complete")
+        raise HTTPException(
+            status_code=503,
+            detail="Server is not configured for Edy completion proxy (EDY_CANDIDATE_API_BASE)",
+        )
+
+    skip = {"assessment_result_id", "user_id", "video_token"}
+    body = {k: v for k, v in payload.items() if k not in skip}
+
+    url = f"{EDY_CANDIDATE_API_BASE.rstrip('/')}/update/assessment_result"
+    params = {"assessment_result_id": rid, "user_id": uid, "video_token": vt}
+
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            resp = await client.post(url, params=params, json=body)
+        render_log(f"EDY_PROXY assessment_complete status={resp.status_code} assessment_result_id={rid!r}")
+        if resp.status_code >= 400:
+            logger.warning(
+                "[Edy] upstream error status=%s body=%s",
+                resp.status_code,
+                (resp.text or "")[:500],
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"Edy API returned {resp.status_code}",
+            )
+        return {"status": "ok", "upstream_status": resp.status_code}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[Edy] proxy request failed")
+        render_log(f"EDY_PROXY_FAIL {e!r}")
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
 
 @app.post("/api/log")
 async def receive_frontend_log(entry: LogEntry):

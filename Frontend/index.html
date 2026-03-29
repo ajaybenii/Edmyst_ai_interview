@@ -1260,6 +1260,8 @@
         let networkQuality = 'good';
         let lastMeasuredSpeed = null;
         const API_BASE = 'https://edmyst-ai-interview.onrender.com';
+        /** Optional: set on Netlify via inline script before bundle — direct POST to API Gateway; if unset, only Render proxy is used */
+        const EDY_CANDIDATE_API_BASE = (typeof window !== 'undefined' && window.__EDY_CANDIDATE_API_BASE__) || '';
 
         // Real speed test using Cloudflare CDN (runs at page load for accuracy)
         async function realSpeedTest() {
@@ -2636,6 +2638,84 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('waveform').classList.remove('active');
         }
 
+        /**
+         * Mark assessment Completed in Edy (Mongo / recruiter UI) — mirrors Step9 + CVI ai_interview joined payload.
+         * Direct POST to execute-api if EDY_CANDIDATE_API_BASE / __EDY_CANDIDATE_API_BASE__ set; else POST Render proxy (avoids CORS).
+         */
+        async function notifyEdyAssessmentComplete(reason) {
+            const rid = sessionMetadata.assessmentResultId;
+            const uid = sessionMetadata.userId;
+            const vt = sessionMetadata.videoToken;
+            if (!rid || !uid || !vt) {
+                console.warn('[Edy] notifyEdyAssessmentComplete skipped — missing assessmentResultId, userId, or videoToken', { reason, rid, uid, vt });
+                return;
+            }
+            const completion_date = new Date().toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: '2-digit',
+            });
+            const completionPayload = {
+                acknowledge_assessment_completion: true,
+                assessment_completed: true,
+                assessment_submitted: true,
+                completion_date,
+                assessment_step: 'success_screen',
+                assessment_status: 'Completed',
+                video_processing_details: { status: 'processing' },
+                vapi_call_status: 'end',
+            };
+            const fullBody = {
+                assessment_result_id: rid,
+                user_id: uid,
+                video_token: vt,
+                ...completionPayload,
+            };
+            const qs = new URLSearchParams({ assessment_result_id: rid, user_id: uid, video_token: vt });
+
+            const postViaProxy = async () => {
+                const r = await fetch(`${API_BASE}/api/edy/assessment-complete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fullBody),
+                });
+                if (!r.ok) {
+                    const t = await r.text().catch(() => '');
+                    throw new Error(`proxy ${r.status} ${t.slice(0, 200)}`);
+                }
+            };
+
+            if (EDY_CANDIDATE_API_BASE) {
+                try {
+                    const url = `${String(EDY_CANDIDATE_API_BASE).replace(/\/$/, '')}/update/assessment_result?${qs.toString()}`;
+                    const r = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(completionPayload),
+                    });
+                    if (!r.ok) {
+                        const t = await r.text().catch(() => '');
+                        throw new Error(`direct ${r.status} ${t.slice(0, 200)}`);
+                    }
+                } catch (e) {
+                    console.warn('[Edy] direct notify failed, trying Render proxy', reason, e);
+                    try {
+                        await postViaProxy();
+                    } catch (e2) {
+                        console.warn('[Edy] proxy notify failed — UI will still show submitted', reason, e2);
+                        Logger.log('warn', 'Edy assessment-complete failed', { reason, error: String(e2) });
+                    }
+                }
+            } else {
+                try {
+                    await postViaProxy();
+                } catch (e) {
+                    console.warn('[Edy] proxy notify failed — UI will still show submitted', reason, e);
+                    Logger.log('warn', 'Edy assessment-complete failed', { reason, error: String(e) });
+                }
+            }
+        }
+
         async function submitPendingTranscript() {
             const vid = sessionMetadata.videoToken;
             if (!vid || !interviewTranscriptTurns.length) return;
@@ -2671,7 +2751,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 if (videoInterval) clearInterval(videoInterval);
                 if (timerInterval) clearInterval(timerInterval);
                 ws?.close();
-                stopAudioStream();
+                networkMonitor.stop();
                 document.getElementById('startBtn').disabled = false;
                 document.getElementById('stopBtn').disabled = true;
                 isActive = false;
@@ -2691,6 +2771,15 @@ registerProcessor('pcm-processor', PCMProcessor);
                     await stopRecordings();
                 } catch (e) {
                     Logger.log('warn', 'stopRecordings error', { error: e.message });
+                }
+                // stopAudioStream stops mediaStream tracks — must run after recorders finish or final WebM chunk/onstop can break
+                stopAudioStream();
+
+                // Recruiter / Mongo: Completed (after transcript + uploads; failures only log — user still sees success UI)
+                try {
+                    await notifyEdyAssessmentComplete(endReason);
+                } catch (e) {
+                    console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
                 }
 
                 if (sharedMicStream) {
