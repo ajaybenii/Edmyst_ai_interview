@@ -1934,7 +1934,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             // ============================================
             // 🐛 DEBUG LOGIC: Download recording locally to verify blob integrity
             // ============================================
-            const _DEBUG_LOCAL_DOWNLOAD = true; // Set to true to download files on stop
+            const _DEBUG_LOCAL_DOWNLOAD = false; // true = auto-download blobs on stop (dev only; confuses candidates)
             const _DEBUG_SKIP_UPLOAD = false; // Set to true to completely stop S3 uploads
             
             if (_DEBUG_LOCAL_DOWNLOAD) {
