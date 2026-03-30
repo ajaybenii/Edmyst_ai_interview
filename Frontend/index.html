@@ -1685,6 +1685,11 @@
         let combinedChunks = [];
         let sharedMicStream = null; // Single shared mic stream for all recordings
 
+        // Setup completion state
+        let setupCompleted = false;
+        let screenSetupCompleted = false;
+        let photoCaptureCompleted = false;
+
         const INPUT_SAMPLE_RATE = 16000;
         const OUTPUT_SAMPLE_RATE = 24000;
         const WS_URL = 'wss://edmyst-ai-interview.onrender.com/ws/interview';
@@ -2225,6 +2230,13 @@ registerProcessor('pcm-processor', PCMProcessor);
 
             for (let attempt = 1; attempt <= maxRetries; attempt++) {
                 try {
+                    console.log('UPLOAD_START', {
+                        type,
+                        url: `${API_BASE}/api/upload-recording`,
+                        blobSize: blob.size,
+                        online: navigator.onLine,
+                        visibilityState: document.visibilityState
+                    });
                     const response = await fetch(`${API_BASE}/api/upload-recording`, {
                         method: 'POST',
                         body: formData
@@ -2265,7 +2277,12 @@ registerProcessor('pcm-processor', PCMProcessor);
                     console.error(`Upload ${type} failed (${response.status}):`, detail);
                     return;
                 } catch (e) {
-                    console.warn(`Upload ${type} error (attempt ${attempt}):`, e);
+                    console.warn(`Upload ${type} error (attempt ${attempt}):`, {
+                        error: String(e),
+                        online: navigator.onLine,
+                        visibilityState: document.visibilityState,
+                        url: `${API_BASE}/api/upload-recording`
+                    });
                     if (attempt < maxRetries) {
                         await new Promise(r => setTimeout(r, Math.random() * 1000 + (attempt * 1000)));
                     } else {
@@ -2430,13 +2447,17 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         /** Step 1: User clicks "Begin Interview Setup" */
         async function beginInterviewSetup() {
+            console.log('SETUP: begin clicked');
             document.getElementById('setupPromptOverlay').classList.remove('active');
 
             // Step 2: Screen Share (recording starts immediately inside startScreenRecording)
             try {
+                console.log('SETUP: requesting screen share');
                 await startScreenRecording();
+                screenSetupCompleted = true;
+                console.log('SETUP: screen share success', { isRecordingScreen });
             } catch (e) {
-                console.warn('Screen share denied during setup', e);
+                console.error('SETUP: screen share failed', e);
                 document.getElementById('screenshareWarning').classList.add('active');
                 return; // Flow blocked until screen share granted via dismissScreenShareWarning
             }
@@ -2444,13 +2465,18 @@ registerProcessor('pcm-processor', PCMProcessor);
             // Step 3: Fullscreen
             if (!isFullscreenActive()) {
                 try {
+                    console.log('SETUP: requesting fullscreen');
                     await goFullscreen(document.documentElement);
+                    console.log('SETUP: fullscreen result', { active: isFullscreenActive() });
                 } catch (e) {
-                    console.warn('Fullscreen denied during setup', e);
+                    console.warn('SETUP: fullscreen failed', e);
                 }
+            } else {
+                console.log('SETUP: already in fullscreen');
             }
 
             // Step 4: Photo Capture
+            console.log('SETUP: showing photo overlay');
             showPhotoCaptureOverlay();
         }
 
@@ -2513,6 +2539,9 @@ registerProcessor('pcm-processor', PCMProcessor);
             btn.disabled = false;
 
             // Hide photo overlay, show ready message
+            photoCaptureCompleted = true;
+            setupCompleted = screenSetupCompleted && photoCaptureCompleted;
+            console.log('SETUP: photo confirmed', { setupCompleted, screenSetupCompleted, photoCaptureCompleted });
             document.getElementById('photoCaptureOverlay').classList.remove('active');
             document.getElementById('readyMessageOverlay').classList.add('active');
         }
@@ -2835,6 +2864,19 @@ registerProcessor('pcm-processor', PCMProcessor);
 
             if (!sessionMetadata.assessmentId || !sessionMetadata.userId) {
                 alert('Session parameters missing. Please use the correct interview link.');
+                return;
+            }
+
+            // Gate: setup must be completed (screen share + photo)
+            if (!isMobile() && !setupCompleted) {
+                console.warn('startInterview blocked: setup not completed', { setupCompleted, screenSetupCompleted, photoCaptureCompleted, isRecordingScreen });
+                alert('Please complete interview setup first (screen sharing & photo capture).');
+                return;
+            }
+
+            if (!isMobile() && !isRecordingScreen) {
+                console.warn('startInterview blocked: screen recording not active');
+                alert('Screen recording is not active. Please complete setup again.');
                 return;
             }
 
