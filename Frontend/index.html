@@ -1844,20 +1844,15 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
                 combinedRecorder.start(1000);
 
-                // 3. Start Screen Recording Video (combined tracks)
-                let combinedTracks = [...screenStream.getVideoTracks()];
-                if (recordingDestination && recordingDestination.stream) {
-                    combinedTracks.push(...recordingDestination.stream.getAudioTracks());
-                } else if (sharedMicStream) {
-                    combinedTracks.push(...sharedMicStream.getAudioTracks());
-                }
-
-                const combinedStream = new MediaStream(combinedTracks);
+                // 3. Start Screen Recording Video
+                // WARNING: Do not mix WebAudio tracks with getDisplayMedia video tracks in a new MediaStream.
+                // It silently hangs MediaRecorder on Chromium (0 chunks emitted). 
+                // We use the raw screenStream directly.
                 const options = {};
                 const mimeType = getSupportedMimeType('video');
                 if (mimeType) options.mimeType = mimeType;
 
-                screenRecorder = new MediaRecorder(combinedStream, options);
+                screenRecorder = new MediaRecorder(screenStream, options);
                 screenChunks = [];
 
                 screenRecorder.ondataavailable = (e) => {
@@ -1947,6 +1942,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                     combinedChunksBeforeStop: combinedChunks ? combinedChunks.length : 0,
                     ...getViewDiagnostics({ phase: 'before_track_stop' })
                 });
+                screenRecorder.requestData(); // Force flush chunks into array before stopping
                 screenRecorder.stop();
                 isRecordingScreen = false;
             }
