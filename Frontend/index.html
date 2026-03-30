@@ -1902,6 +1902,13 @@ registerProcessor('pcm-processor', PCMProcessor);
                 screenRecorder.stop();
                 isRecordingScreen = false;
             }
+
+            // Immediately stop all screen-share tracks so the browser indicator disappears
+            // (onstop callback will also try, but this ensures instant visual feedback)
+            try {
+                screenStream?.getTracks().forEach(t => t.stop());
+            } catch (_) { /* already stopped */ }
+
             if (rrwebStopFn) {
                 rrwebStopFn(); // stop recording DOM
                 const rrwebBlob = new Blob([JSON.stringify(rrwebEvents)], { type: 'application/json' });
@@ -2103,21 +2110,32 @@ registerProcessor('pcm-processor', PCMProcessor);
             requestFullscreenAndResume();
         }
 
+        function goFullscreen(el) {
+            if (el.requestFullscreen) return el.requestFullscreen();
+            if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
+            if (el.msRequestFullscreen) return el.msRequestFullscreen();
+            return Promise.reject(new Error('Fullscreen API not supported'));
+        }
+
         function requestFullscreenAndResume() {
-            document.documentElement.requestFullscreen().then(() => {
+            goFullscreen(document.documentElement).then(() => {
                 document.getElementById('fullscreenBlocker').classList.remove('active');
             }).catch(e => {
-                alert("Fullscreen permission denied. Please click allowing Fullscreen to continue.");
+                console.warn('Fullscreen denied:', e.message);
+                // Still remove blocker so user isn't stuck
+                document.getElementById('fullscreenBlocker').classList.remove('active');
             });
         }
 
         // STARTUP FLOW SEQUENCE
         function enterFullscreenFromPrompt() {
             document.getElementById('fullscreenPrompt').classList.remove('active');
-            document.documentElement.requestFullscreen().then(() => {
+            goFullscreen(document.documentElement).then(() => {
                 document.getElementById('startBtn').disabled = false;
             }).catch(e => {
-                console.log('Fullscreen denied from prompt');
+                console.warn('Fullscreen denied from prompt:', e.message);
+                // Allow start even without fullscreen so interview is not blocked
+                document.getElementById('startBtn').disabled = false;
             });
         }
 
@@ -2945,7 +2963,7 @@ registerProcessor('pcm-processor', PCMProcessor);
         // --- Fullscreen Enforcement ---
         function returnToFullscreen() {
             document.getElementById('fullscreenWarning').classList.remove('active');
-            document.documentElement.requestFullscreen().catch(() => { });
+            goFullscreen(document.documentElement).catch(() => { });
         }
 
         document.addEventListener('fullscreenchange', () => {
