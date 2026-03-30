@@ -1809,24 +1809,55 @@ registerProcessor('pcm-processor', PCMProcessor);
                 previewVideo.muted = true;
                 previewVideo.playsInline = true;
                 previewVideo.srcObject = screenStream;
+                previewVideo.style.position = 'fixed';
+                previewVideo.style.left = '-99999px';
+                previewVideo.style.top = '0';
+                previewVideo.style.width = '1px';
+                previewVideo.style.height = '1px';
+                previewVideo.style.opacity = '0';
+                previewVideo.style.pointerEvents = 'none';
+                document.body.appendChild(previewVideo);
+
+                await new Promise((resolve) => {
+                    if (previewVideo.readyState >= 1) {
+                        resolve();
+                        return;
+                    }
+                    previewVideo.onloadedmetadata = () => resolve();
+                });
 
                 await previewVideo.play();
+
+                if ('requestVideoFrameCallback' in HTMLVideoElement.prototype) {
+                    await new Promise((resolve) => {
+                        previewVideo.requestVideoFrameCallback(() => resolve());
+                    });
+                } else {
+                    await new Promise((r) => setTimeout(r, 300));
+                }
 
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
 
                 const capVideoTrack = screenStream.getVideoTracks()[0];
-                const capDims = capVideoTrack && capVideoTrack.getSettings ? capVideoTrack.getSettings() : {};
-                canvas.width = capDims.width || 1280;
-                canvas.height = capDims.height || 720;
+                const capDims = capVideoTrack?.getSettings ? capVideoTrack.getSettings() : {};
+
+                canvas.width = previewVideo.videoWidth || capDims.width || 1280;
+                canvas.height = previewVideo.videoHeight || capDims.height || 720;
 
                 let drawLoopActive = true;
 
                 function drawFrame() {
                     if (!drawLoopActive) return;
+
                     try {
-                        ctx.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
-                    } catch (_) { /* e.g. video not ready yet */ }
+                        if (previewVideo.readyState >= 2 && previewVideo.videoWidth > 0 && previewVideo.videoHeight > 0) {
+                            ctx.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
+                        }
+                    } catch (err) {
+                        console.warn('drawFrame failed', err);
+                    }
+
                     requestAnimationFrame(drawFrame);
                 }
 
@@ -1988,6 +2019,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                         drawLoopActive = false;
                         try { previewVideo.pause(); } catch (_) { }
                         try { previewVideo.srcObject = null; } catch (_) { }
+                        try { previewVideo.remove(); } catch (_) { }
                         try { canvasStream.getTracks().forEach(t => t.stop()); } catch (_) { }
                         try {
                             screenStream?.getTracks().forEach(t => t.stop());
@@ -2004,9 +2036,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
-                // Hide screen share warning and show fullscreen prompt
                 document.getElementById('screenshareWarning').style.display = 'none';
-                document.getElementById('fullscreenPrompt').classList.add('active');
 
             } catch (e) {
                 Logger.log('error', 'Screen recording error:', { error: e.message });
@@ -2596,10 +2626,17 @@ registerProcessor('pcm-processor', PCMProcessor);
             if (isActive) return;
             playClickSound('start');
 
-            // ✅ CHECK: Valid session metadata
             if (!sessionMetadata.assessmentId || !sessionMetadata.userId) {
                 alert('Session parameters missing. Please use the correct interview link.');
                 return;
+            }
+
+            if (!isMobile() && !isFullscreenActive()) {
+                try {
+                    await goFullscreen(document.documentElement);
+                } catch (e) {
+                    console.warn('Fullscreen failed before screen share', e);
+                }
             }
 
             if (!isMobile() && !isRecordingScreen) {
