@@ -1277,6 +1277,11 @@ async def upload_recording(
         extension = ".json"
         filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
         s3_key = f"{base_folder}/{subfolder}/{filename}"
+    elif recording_type == "candidate_photo":
+        subfolder = "candidate_photo"
+        extension = ".jpg"
+        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
+        s3_key = f"{base_folder}/{subfolder}/{filename}"
     else:
         subfolder = "user_audio"
         extension = ".webm"

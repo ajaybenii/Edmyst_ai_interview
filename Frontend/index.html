@@ -806,7 +806,10 @@
         .fullscreen-prompt-overlay,
         .screenshare-warning-overlay,
         .fullscreen-warning-overlay,
-        .server-loader-overlay {
+        .server-loader-overlay,
+        .setup-prompt-overlay,
+        .photo-capture-overlay,
+        .ready-message-overlay {
             display: flex;
             position: fixed;
             inset: 0;
@@ -960,15 +963,43 @@
         .fullscreen-prompt-overlay,
         .screenshare-warning-overlay,
         .fullscreen-warning-overlay,
-        .server-loader-overlay {
+        .server-loader-overlay,
+        .setup-prompt-overlay,
+        .photo-capture-overlay,
+        .ready-message-overlay {
             display: none;
         }
 
         .fullscreen-prompt-overlay.active,
         .screenshare-warning-overlay.active,
         .fullscreen-warning-overlay.active,
-        .server-loader-overlay.active {
+        .server-loader-overlay.active,
+        .setup-prompt-overlay.active,
+        .photo-capture-overlay.active,
+        .ready-message-overlay.active {
             display: flex;
+        }
+
+        /* Photo Capture Overlay Specific */
+        #photoCaptureVideo {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            background: #000;
+        }
+        #photoCapturedImg {
+            display: none;
+            width: 100%;
+            max-width: 400px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            border: 3px solid var(--accent);
+        }
+        #photoConfirmActions {
+            display: none;
+            gap: 12px;
+            justify-content: center;
         }
 
         .overlay-card {
@@ -1066,6 +1097,47 @@
     <div class="bg-texture"></div>
     <div class="noise"></div>
     <div class="accent-stripe"></div>
+
+    <!-- Step 0: Begin Interview Setup (user gesture for getDisplayMedia in iframe) -->
+    <div class="setup-prompt-overlay" id="setupPromptOverlay">
+        <div class="overlay-card">
+            <div class="overlay-icon">🎯</div>
+            <div class="overlay-title">Welcome to Your Interview</div>
+            <div class="overlay-msg">We need to set up a few things before your interview begins — screen sharing, fullscreen mode, and a quick photo verification. Click below to get started.</div>
+            <button class="overlay-btn" id="beginSetupBtn" onclick="beginInterviewSetup()">🚀 Begin Interview Setup</button>
+        </div>
+    </div>
+
+    <!-- Step 4: Photo Capture (mandatory) -->
+    <div class="photo-capture-overlay" id="photoCaptureOverlay">
+        <div class="overlay-card" style="max-width: 520px;">
+            <div class="overlay-icon">📸</div>
+            <div class="overlay-title">Capture Your Photo</div>
+            <div class="overlay-msg">Please position yourself clearly in the frame and capture your photo. This is mandatory before starting the interview.</div>
+            <div id="photoCapturePreview" style="display:flex; flex-direction:column; align-items:center;">
+                <video id="photoCaptureVideo" autoplay muted playsinline></video>
+                <canvas id="photoCaptureCanvas" style="display:none;"></canvas>
+                <img id="photoCapturedImg" alt="Captured photo" />
+            </div>
+            <div id="photoCaptureActions" style="margin-top:16px;">
+                <button class="overlay-btn" id="capturePhotoBtn" onclick="capturePhoto()">📸 Capture Candidate Photo</button>
+            </div>
+            <div id="photoConfirmActions" style="margin-top:16px;">
+                <button class="overlay-btn danger" onclick="retakePhoto()">🔄 Retake</button>
+                <button class="overlay-btn" onclick="confirmPhoto()">✅ Confirm & Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 5: Ready Message -->
+    <div class="ready-message-overlay" id="readyMessageOverlay">
+        <div class="overlay-card">
+            <div class="overlay-icon">✅</div>
+            <div class="overlay-title">You're All Set!</div>
+            <div class="overlay-msg">When you are ready, please click on the <strong>Start Interview</strong> button to begin your session. Good luck!</div>
+            <button class="overlay-btn" onclick="dismissReadyMessage()">Got it ✕</button>
+        </div>
+    </div>
 
     <!-- Fullscreen Prompt -->
     <div class="fullscreen-prompt-overlay" id="fullscreenPrompt">
@@ -2242,9 +2314,16 @@ registerProcessor('pcm-processor', PCMProcessor);
         }
 
         // Initialize on load
-        window.addEventListener('load', () => {
-            initializeMedia();
+        window.addEventListener('load', async () => {
             setupSecurityListeners();
+            await initializeMedia();
+            // Show the setup prompt overlay (user gesture needed for getDisplayMedia in iframe)
+            if (!isMobile()) {
+                document.getElementById('setupPromptOverlay').classList.add('active');
+            } else {
+                // Mobile: no screen share/fullscreen, go straight to photo capture
+                showPhotoCaptureOverlay();
+            }
         });
 
         // ==========================================
@@ -2335,9 +2414,137 @@ registerProcessor('pcm-processor', PCMProcessor);
             try {
                 await startScreenRecording();
                 document.getElementById('screenshareWarning').classList.remove('active');
+                // Continue the setup flow after screen share retry
+                if (!isMobile() && !isFullscreenActive()) {
+                    try { await goFullscreen(document.documentElement); } catch (_) { }
+                }
+                showPhotoCaptureOverlay();
             } catch (e) {
                 console.warn('Screen share still failed after warning dismiss', e);
             }
+        }
+
+        // ==========================================
+        // NEW ONBOARDING FLOW FUNCTIONS
+        // ==========================================
+
+        /** Step 1: User clicks "Begin Interview Setup" */
+        async function beginInterviewSetup() {
+            document.getElementById('setupPromptOverlay').classList.remove('active');
+
+            // Step 2: Screen Share (recording starts immediately inside startScreenRecording)
+            try {
+                await startScreenRecording();
+            } catch (e) {
+                console.warn('Screen share denied during setup', e);
+                document.getElementById('screenshareWarning').classList.add('active');
+                return; // Flow blocked until screen share granted via dismissScreenShareWarning
+            }
+
+            // Step 3: Fullscreen
+            if (!isFullscreenActive()) {
+                try {
+                    await goFullscreen(document.documentElement);
+                } catch (e) {
+                    console.warn('Fullscreen denied during setup', e);
+                }
+            }
+
+            // Step 4: Photo Capture
+            showPhotoCaptureOverlay();
+        }
+
+        /** Show the photo capture overlay with camera preview */
+        function showPhotoCaptureOverlay() {
+            const video = document.getElementById('photoCaptureVideo');
+            if (videoStream) {
+                video.srcObject = videoStream;
+            }
+            // Reset state
+            document.getElementById('photoCapturedImg').style.display = 'none';
+            document.getElementById('photoCaptureVideo').style.display = 'block';
+            document.getElementById('photoCaptureActions').style.display = 'block';
+            document.getElementById('photoConfirmActions').style.display = 'none';
+            document.getElementById('photoCaptureOverlay').classList.add('active');
+        }
+
+        /** Capture a still frame from the camera */
+        function capturePhoto() {
+            const video = document.getElementById('photoCaptureVideo');
+            const canvas = document.getElementById('photoCaptureCanvas');
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            const img = document.getElementById('photoCapturedImg');
+            img.src = canvas.toDataURL('image/jpeg', 0.9);
+            img.style.display = 'block';
+            video.style.display = 'none';
+
+            document.getElementById('photoCaptureActions').style.display = 'none';
+            document.getElementById('photoConfirmActions').style.display = 'flex';
+        }
+
+        /** Retake the photo */
+        function retakePhoto() {
+            document.getElementById('photoCapturedImg').style.display = 'none';
+            document.getElementById('photoCaptureVideo').style.display = 'block';
+            document.getElementById('photoCaptureActions').style.display = 'block';
+            document.getElementById('photoConfirmActions').style.display = 'none';
+        }
+
+        /** Confirm photo, upload to S3, and proceed */
+        async function confirmPhoto() {
+            const btn = document.querySelector('#photoConfirmActions .overlay-btn:last-child');
+            btn.textContent = '⏳ Uploading...';
+            btn.disabled = true;
+
+            try {
+                const canvas = document.getElementById('photoCaptureCanvas');
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.9));
+                await uploadCandidatePhoto(blob);
+            } catch (e) {
+                console.error('Photo upload failed:', e);
+                Logger.log('error', 'Candidate photo upload failed', { error: e.message });
+                // Continue anyway — don't block the interview
+            }
+
+            btn.textContent = '✅ Confirm & Continue';
+            btn.disabled = false;
+
+            // Hide photo overlay, show ready message
+            document.getElementById('photoCaptureOverlay').classList.remove('active');
+            document.getElementById('readyMessageOverlay').classList.add('active');
+        }
+
+        /** Upload candidate photo to S3 via backend */
+        async function uploadCandidatePhoto(blob) {
+            const formData = new FormData();
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `candidate_photo_${timestamp}.jpg`;
+            formData.append('file', blob, filename);
+            formData.append('recording_type', 'candidate_photo');
+            formData.append('session_id', sessionMetadata.videoToken || '');
+            formData.append('assessment_result_id', sessionMetadata.assessmentResultId || '');
+            formData.append('user_id', sessionMetadata.userId || '');
+            formData.append('video_token', sessionMetadata.videoToken || '');
+
+            const response = await fetch(`${API_BASE}/api/upload-recording`, {
+                method: 'POST',
+                body: formData
+            });
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(`Photo upload HTTP ${response.status}: ${errText.slice(0, 200)}`);
+            }
+            const data = await response.json();
+            console.log('Candidate photo uploaded:', data);
+            Logger.log('info', 'Candidate photo uploaded', { s3_key: data.s3_key });
+        }
+
+        /** Dismiss the ready message and reveal the interview controls */
+        function dismissReadyMessage() {
+            document.getElementById('readyMessageOverlay').classList.remove('active');
         }
 
         function toggleCamera() {
@@ -2629,24 +2836,6 @@ registerProcessor('pcm-processor', PCMProcessor);
             if (!sessionMetadata.assessmentId || !sessionMetadata.userId) {
                 alert('Session parameters missing. Please use the correct interview link.');
                 return;
-            }
-
-            if (!isMobile() && !isFullscreenActive()) {
-                try {
-                    await goFullscreen(document.documentElement);
-                } catch (e) {
-                    console.warn('Fullscreen failed before screen share', e);
-                }
-            }
-
-            if (!isMobile() && !isRecordingScreen) {
-                try {
-                    await startScreenRecording();
-                } catch (e) {
-                    console.warn('Screen share start failed from Start Interview click', e);
-                    document.getElementById('screenshareWarning').classList.add('active');
-                    return;
-                }
             }
 
             document.getElementById('startBtn').disabled = true;
