@@ -2094,14 +2094,19 @@ registerProcessor('pcm-processor', PCMProcessor);
                 }
             });
 
-            // Fullscreen Drop Tracking
-            document.addEventListener('fullscreenchange', () => {
-                if (!document.fullscreenElement && isActive && !isMobile()) {
+            // Fullscreen Drop Tracking (Cross-browser)
+            const handleFullscreenChange = () => {
+                const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+                if (!isFullscreen && isActive && !isMobile()) {
                     sessionMetadata.securityFlags.push({ event: 'fullscreen_exit', time: new Date().toISOString() });
                     document.getElementById('fullscreenBlocker').classList.add('active');
                     Logger.log('warn', 'User exited fullscreen during active interview');
                 }
-            });
+            };
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+            document.addEventListener('MSFullscreenChange', handleFullscreenChange);
         }
 
         // Blocker dismissal functions
@@ -2112,9 +2117,22 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         function goFullscreen(el) {
             if (el.requestFullscreen) return el.requestFullscreen();
+            if (el.mozRequestFullScreen) return el.mozRequestFullScreen();
             if (el.webkitRequestFullscreen) return el.webkitRequestFullscreen();
             if (el.msRequestFullscreen) return el.msRequestFullscreen();
             return Promise.reject(new Error('Fullscreen API not supported'));
+        }
+
+        function exitFullscreen() {
+            if (document.exitFullscreen) return document.exitFullscreen();
+            if (document.webkitExitFullscreen) return document.webkitExitFullscreen();
+            if (document.mozCancelFullScreen) return document.mozCancelFullScreen();
+            if (document.msExitFullscreen) return document.msExitFullscreen();
+            return Promise.resolve();
+        }
+
+        function isFullscreenActive() {
+            return !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
         }
 
         function requestFullscreenAndResume() {
@@ -2897,8 +2915,8 @@ registerProcessor('pcm-processor', PCMProcessor);
                 isActive = false;
 
                 document.getElementById('fullscreenWarning').classList.remove('active');
-                if (document.fullscreenElement) {
-                    document.exitFullscreen().catch(() => { });
+                if (isFullscreenActive()) {
+                    exitFullscreen().catch(() => { });
                 }
 
                 const timerEl = document.getElementById('interviewTimer');
@@ -2975,12 +2993,16 @@ registerProcessor('pcm-processor', PCMProcessor);
             goFullscreen(document.documentElement).catch(() => { });
         }
 
-        document.addEventListener('fullscreenchange', () => {
-            if (!document.fullscreenElement && isActive) {
+        const handleWarningFullscreenChange = () => {
+            if (!isFullscreenActive() && isActive) {
                 // User exited fullscreen during active interview — show warning
                 document.getElementById('fullscreenWarning').classList.add('active');
             }
-        });
+        };
+        document.addEventListener('fullscreenchange', handleWarningFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleWarningFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleWarningFullscreenChange);
+        document.addEventListener('MSFullscreenChange', handleWarningFullscreenChange);
 
         // --- Ambient Particle Background on Completion ---
         function startCompletionCelebration() {
