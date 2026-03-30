@@ -1670,22 +1670,30 @@
             return false;
         }
 
-        // Helper to check supported MIME types
+        // Helper to check supported MIME types (video: VP8-first for broader screen-capture reliability)
         function getSupportedMimeType(type) {
-            const types = [
-                `${type}/webm;codecs=vp9,opus`,
-                `${type}/webm;codecs=vp8,opus`,
-                `${type}/webm`,
-                `${type}/mp4`
-            ];
+            const types = type === 'video'
+                ? [
+                    'video/webm;codecs=vp8,opus',
+                    'video/webm;codecs=vp9,opus',
+                    'video/webm',
+                    'video/mp4'
+                ]
+                : [
+                    'audio/webm;codecs=opus',
+                    'audio/webm',
+                    'audio/mp4'
+                ];
+
             for (const t of types) {
                 if (MediaRecorder.isTypeSupported(t)) {
                     console.log(`Using supported MIME type for ${type}: ${t}`);
                     return t;
                 }
             }
+
             console.warn(`No optimal MIME type found for ${type}, using default.`);
-            return ''; // Let browser choose default
+            return '';
         }
 
         // Inline AudioWorklet Code
@@ -1855,9 +1863,53 @@ registerProcessor('pcm-processor', PCMProcessor);
                 screenRecorder = new MediaRecorder(screenStream, options);
                 screenChunks = [];
 
-                screenRecorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) screenChunks.push(e.data);
+                screenRecorder.onstart = () => {
+                    console.log('screenRecorder started', {
+                        state: screenRecorder.state,
+                        mimeType: screenRecorder.mimeType,
+                        tracks: screenStream?.getTracks().map(t => ({
+                            kind: t.kind,
+                            label: t.label,
+                            readyState: t.readyState,
+                            muted: t.muted,
+                            enabled: t.enabled
+                        }))
+                    });
                 };
+
+                screenRecorder.onerror = (e) => {
+                    console.error('screenRecorder error', e);
+                };
+
+                screenRecorder.ondataavailable = (e) => {
+                    console.log('screenRecorder dataavailable', {
+                        size: e.data?.size,
+                        type: e.data?.type,
+                        state: screenRecorder?.state
+                    });
+                    if (e.data && e.data.size > 0) screenChunks.push(e.data);
+                };
+
+                screenStream.getVideoTracks().forEach(track => {
+                    track.onended = () => console.warn('screen video track ended');
+                    track.onmute = () => console.warn('screen video track muted');
+                    track.onunmute = () => console.warn('screen video track unmuted');
+                });
+
+                setTimeout(() => {
+                    console.log('screenRecorder sanity', {
+                        state: screenRecorder?.state,
+                        mimeType: screenRecorder?.mimeType,
+                        chunkCount: screenChunks.length,
+                        tracks: screenStream?.getTracks().map(t => ({
+                            kind: t.kind,
+                            readyState: t.readyState,
+                            muted: t.muted,
+                            enabled: t.enabled,
+                            label: t.label
+                        }))
+                    });
+                }, 3000);
 
                 screenRecorder.onstop = async () => {
                     await new Promise(r => setTimeout(r, 400)); // allow last chunk to arrive
