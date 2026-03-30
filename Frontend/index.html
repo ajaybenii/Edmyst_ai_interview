@@ -1947,18 +1947,9 @@ registerProcessor('pcm-processor', PCMProcessor);
                 isRecordingScreen = false;
             }
 
-            // Immediately stop all screen-share tracks so the browser indicator disappears
-            // (onstop callback will also try, but this ensures instant visual feedback)
-            try {
-                if (screenStream && screenStream.getTracks().length) {
-                    Logger.log('info', 'stopRecordings: stopping display-capture tracks (runs before screenRecorder.onstop may flush)', {
-                        trackCount: screenStream.getTracks().length,
-                        screenChunksAfterSyncStopCall: screenChunks.length,
-                        ...getViewDiagnostics({ phase: 'immediate_track_stop' })
-                    });
-                }
-                screenStream?.getTracks().forEach(t => t.stop());
-            } catch (_) { /* already stopped */ }
+            // Do not stop display-capture tracks here: ending tracks before screenRecorder.onstop
+            // often yields 0 chunks (Chrome, especially in cross-origin iframes). Tracks stop in
+            // screenRecorder.onstop finally after the blob is built.
 
             if (rrwebStopFn) {
                 rrwebStopFn(); // stop recording DOM
@@ -1970,8 +1961,23 @@ registerProcessor('pcm-processor', PCMProcessor);
             await Promise.all(uploadPromises);
         }
 
+        /** Serialize S3 uploads — parallel multipart POSTs to the same host from an iframe often yield the second failing with TypeError: Failed to fetch (Render / browser limits). */
+        let _recordingUploadChain = Promise.resolve();
+
         // Save recording locally and upload
         async function saveRecording(blob, type, maxRetries = 3) {
+            const prev = _recordingUploadChain;
+            let releaseChain;
+            _recordingUploadChain = new Promise((r) => { releaseChain = r; });
+            await prev;
+            try {
+                await saveRecordingUnlocked(blob, type, maxRetries);
+            } finally {
+                releaseChain();
+            }
+        }
+
+        async function saveRecordingUnlocked(blob, type, maxRetries = 3) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const ext = type === 'rrweb' ? 'json' : 'webm';
             const filename = `interview_${type}_${timestamp}.${ext}`;
