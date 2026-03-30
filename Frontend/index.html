@@ -1797,16 +1797,11 @@ registerProcessor('pcm-processor', PCMProcessor);
                     return; // Skip getDisplayMedia
                 }
 
-                // Desktop: Get screen with system audio (AI voice)
-                // Force full screen share only (no window option)
                 screenStream = await navigator.mediaDevices.getDisplayMedia({
                     video: {
-                        cursor: 'always',
-                        displaySurface: 'monitor'  // Force full screen only
+                        cursor: 'always'
                     },
-                    audio: true,  // Capture system audio (AI voice)
-                    selfBrowserSurface: 'exclude',  // Hide browser control bar
-                    surfaceSwitching: 'exclude'  // Prevent surface switching
+                    audio: false
                 });
 
                 // Use shared mic stream (already obtained) -> No longer needed separately, as it is mixed in recordingDestination
@@ -1957,7 +1952,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                     }
                 };
 
-                screenRecorder.start(1000);
+                screenRecorder.start();
                 screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
@@ -2162,14 +2157,6 @@ registerProcessor('pcm-processor', PCMProcessor);
                 Logger.log('info', 'Media initialized on load');
                 mediaInitialized = true;
 
-                // As soon as Camera/Mic is ready, force Screen Share
-                try {
-                    await startScreenRecording();
-                } catch (e) {
-                    console.warn("Screen share denied immediately on load", e);
-                    // The catch block in startScreenRecording already shows the warning overlay
-                }
-
             } catch (e) {
                 Logger.log('error', 'Media initialization error:', { error: e.message });
                 alert("Please allow Camera and Microphone access to proceed with the interview.");
@@ -2266,8 +2253,13 @@ registerProcessor('pcm-processor', PCMProcessor);
             });
         }
 
-        function dismissScreenShareWarning() {
-            startScreenRecording();
+        async function dismissScreenShareWarning() {
+            try {
+                await startScreenRecording();
+                document.getElementById('screenshareWarning').classList.remove('active');
+            } catch (e) {
+                console.warn('Screen share still failed after warning dismiss', e);
+            }
         }
 
         function toggleCamera() {
@@ -2562,10 +2554,14 @@ registerProcessor('pcm-processor', PCMProcessor);
                 return;
             }
 
-            // At this point, Screen Share and Fullscreen should be active, but let's just make sure.
-            if (!isRecordingScreen && !isMobile()) {
-                document.getElementById('screenshareWarning').style.display = 'flex';
-                return;
+            if (!isMobile() && !isRecordingScreen) {
+                try {
+                    await startScreenRecording();
+                } catch (e) {
+                    console.warn('Screen share start failed from Start Interview click', e);
+                    document.getElementById('screenshareWarning').classList.add('active');
+                    return;
+                }
             }
 
             document.getElementById('startBtn').disabled = true;
