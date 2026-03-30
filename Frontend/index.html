@@ -1418,6 +1418,20 @@
             }
         }
 
+        /** Snapshot for correlating blur, WS close, and recorder teardown (console + /api/log). */
+        function getViewDiagnostics(extra = {}) {
+            const fs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement);
+            return {
+                visibilityState: document.visibilityState,
+                hidden: document.hidden,
+                hasFocus: typeof document.hasFocus === 'function' ? document.hasFocus() : null,
+                fullscreen: fs,
+                inIframe: window !== window.top,
+                online: navigator.onLine,
+                ...extra
+            };
+        }
+
         // ═══════════════════════════════════════════════════
         // HYBRID NETWORK MONITOR (10s Live Speed Update)
         // ═══════════════════════════════════════════════════
@@ -1432,13 +1446,13 @@
                 if (this.isRunning) return;
                 this.isRunning = true;
                 this.loop();
-                Logger.log('info', '📡 Network Monitor Started (Live 10s)');
+                Logger.log('info', '📡 Network Monitor Started (Live 10s)', getViewDiagnostics({ reason: 'start' }));
             }
 
-            stop() {
+            stop(reason = 'unknown') {
                 this.isRunning = false;
                 if (this.timer) clearTimeout(this.timer);
-                Logger.log('info', '🔕 Network Monitor Stopped');
+                Logger.log('info', '🔕 Network Monitor Stopped', getViewDiagnostics({ reason }));
             }
 
             async loop() {
@@ -1571,6 +1585,13 @@
         let silenceWelfareLatched = false;
         let silenceWatchInterval = null;
         let stopInterviewInProgress = false;
+        /** True while submitPendingTranscript + stopRecordings + uploads run after End Interview */
+        let interviewRecordingsFinalizeInProgress = false;
+        let lastInterviewEndReason = null;
+        let wsOpenedAt = null;
+        let wsLastRxAt = null;
+        let wsClientCloseInitiated = false;
+        let screenRecorderStartedAt = null;
 
         // Recording variables
         let audioRecorder = null;
@@ -1848,7 +1869,27 @@ registerProcessor('pcm-processor', PCMProcessor);
                     try {
                         const blob = new Blob(screenChunks, { type: screenRecorder.mimeType || 'video/webm' });
                         if (blob.size === 0) {
-                            Logger.log('warn', 'Screen recording skipped: empty blob (check display capture + MediaRecorder flush)');
+                            const totalChunkBytes = screenChunks.reduce((s, c) => s + (c && c.size ? c.size : 0), 0);
+                            const trackStates = screenStream ? screenStream.getTracks().map(t => ({
+                                kind: t.kind,
+                                readyState: t.readyState,
+                                muted: t.muted,
+                                enabled: t.enabled,
+                                label: (t.label || '').slice(0, 120)
+                            })) : [];
+                            Logger.log('warn', 'Screen recording skipped: empty blob (check display capture + MediaRecorder flush)', {
+                                chunkCount: screenChunks.length,
+                                totalChunkBytes,
+                                recorderState: screenRecorder ? screenRecorder.state : null,
+                                mimeType: screenRecorder ? screenRecorder.mimeType : null,
+                                msSinceScreenRecordStart: screenRecorderStartedAt ? Date.now() - screenRecorderStartedAt : null,
+                                tracksAtStop: trackStates,
+                                stopInterviewInProgress,
+                                interviewRecordingsFinalizeInProgress,
+                                combinedChunksCount: combinedChunks ? combinedChunks.length : 0,
+                                assessmentResultId: sessionMetadata?.assessmentResultId,
+                                ...getViewDiagnostics()
+                            });
                             return;
                         }
                         try {
@@ -1870,6 +1911,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 screenRecorder.start(1000);
+                screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
                 // Hide screen share warning and show fullscreen prompt
@@ -1899,6 +1941,12 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
             if (screenRecorder && screenRecorder.state !== 'inactive') {
                 uploadPromises.push(new Promise(r => resolveScreenRecorderStop = r));
+                Logger.log('info', 'stopRecordings: screen MediaRecorder.stop() scheduled', {
+                    screenChunksBeforeStop: screenChunks.length,
+                    screenRecorderState: screenRecorder.state,
+                    combinedChunksBeforeStop: combinedChunks ? combinedChunks.length : 0,
+                    ...getViewDiagnostics({ phase: 'before_track_stop' })
+                });
                 screenRecorder.stop();
                 isRecordingScreen = false;
             }
@@ -1906,6 +1954,13 @@ registerProcessor('pcm-processor', PCMProcessor);
             // Immediately stop all screen-share tracks so the browser indicator disappears
             // (onstop callback will also try, but this ensures instant visual feedback)
             try {
+                if (screenStream && screenStream.getTracks().length) {
+                    Logger.log('info', 'stopRecordings: stopping display-capture tracks (runs before screenRecorder.onstop may flush)', {
+                        trackCount: screenStream.getTracks().length,
+                        screenChunksAfterSyncStopCall: screenChunks.length,
+                        ...getViewDiagnostics({ phase: 'immediate_track_stop' })
+                    });
+                }
                 screenStream?.getTracks().forEach(t => t.stop());
             } catch (_) { /* already stopped */ }
 
@@ -2082,7 +2137,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 if (document.hidden && isActive) {
                     sessionMetadata.securityFlags.push({ event: 'tab_switch', time: new Date().toISOString() });
                     document.getElementById('tabWarningBlocker').classList.add('active');
-                    Logger.log('warn', 'User switched tabs or minimized window');
+                    Logger.log('warn', 'User switched tabs or minimized window', getViewDiagnostics({ event: 'visibilitychange' }));
                 }
             });
 
@@ -2090,7 +2145,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 if (isActive) {
                     sessionMetadata.securityFlags.push({ event: 'window_blur', time: new Date().toISOString() });
                     // document.getElementById('tabWarningBlocker').classList.add('active');
-                    Logger.log('warn', 'User lost focus on the window');
+                    Logger.log('warn', 'User lost focus on the window', getViewDiagnostics({ event: 'blur', note: 'iframe/parent focus switch also fires blur' }));
                 }
             });
 
@@ -2505,6 +2560,9 @@ registerProcessor('pcm-processor', PCMProcessor);
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = async function () {
+                    wsOpenedAt = Date.now();
+                    wsLastRxAt = null;
+                    wsClientCloseInitiated = false;
                     updateStatus('Interview Active', true);
 
                     // ✅ Send session metadata to backend
@@ -2530,6 +2588,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
 
                 ws.onmessage = function (event) {
+                    wsLastRxAt = Date.now();
                     const handleMessage = (text) => {
                         const msg = JSON.parse(text);
 
@@ -2614,13 +2673,24 @@ registerProcessor('pcm-processor', PCMProcessor);
                     updateStatus('Connection Error', false);
                 };
                 ws.onclose = (e) => {
-                    const payload = { code: e.code, reason: e.reason, wasClean: e.wasClean };
+                    const payload = {
+                        code: e.code,
+                        reason: e.reason || '',
+                        wasClean: e.wasClean,
+                        clientInitiatedClose: wsClientCloseInitiated,
+                        lastInterviewEndReason,
+                        stopInterviewInProgress,
+                        interviewRecordingsFinalizeInProgress,
+                        wsAgeMs: wsOpenedAt ? Date.now() - wsOpenedAt : null,
+                        msSinceLastRx: wsLastRxAt ? Date.now() - wsLastRxAt : null,
+                        ...getViewDiagnostics()
+                    };
                     const normalClientClose = e.wasClean && (e.code === 1000 || e.code === 1005);
                     if (normalClientClose) {
                         console.log('WebSocket closed', payload);
                         Logger.log('info', 'WebSocket Closed', payload);
                     } else {
-                        console.warn(`WebSocket Closed: Code=${e.code}, Reason=${e.reason}, Clean=${e.wasClean}`);
+                        console.warn(`WebSocket Closed: Code=${e.code}, Reason=${e.reason}, Clean=${e.wasClean}`, payload);
                         Logger.log('error', 'WebSocket Closed', payload);
                     }
                     updateStatus('Interview Ended', false);
@@ -2898,6 +2968,7 @@ registerProcessor('pcm-processor', PCMProcessor);
         async function stopInterview(endReason = 'manual') {
             if (stopInterviewInProgress) return;
             stopInterviewInProgress = true;
+            lastInterviewEndReason = endReason;
             try {
                 if (silenceWatchInterval) {
                     clearInterval(silenceWatchInterval);
@@ -2908,8 +2979,14 @@ registerProcessor('pcm-processor', PCMProcessor);
                 // --- IMMEDIATE UI: show completion screen right away ---
                 if (videoInterval) clearInterval(videoInterval);
                 if (timerInterval) clearInterval(timerInterval);
+                if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                    wsClientCloseInitiated = true;
+                    const closeDiag = getViewDiagnostics({ endReason, wsReadyState: ws.readyState });
+                    console.log('[EdyAudioInterview] WebSocket close requested (interview end)', closeDiag);
+                    Logger.log('info', 'WebSocket close requested (interview end)', closeDiag);
+                }
                 ws?.close();
-                networkMonitor.stop();
+                networkMonitor.stop('stopInterview');
                 document.getElementById('startBtn').disabled = false;
                 document.getElementById('stopBtn').disabled = true;
                 isActive = false;
@@ -2944,41 +3021,47 @@ registerProcessor('pcm-processor', PCMProcessor);
 
                 // --- BACKGROUND TASKS: Uploads & API calls without blocking UI ---
                 (async () => {
+                    interviewRecordingsFinalizeInProgress = true;
                     try {
-                        await submitPendingTranscript();
-                    } catch (e) {
-                         Logger.log('warn', 'submitPendingTranscript error', { error: e.message });
-                    }
-
-                    try {
-                        await stopRecordings();
-                    } catch (e) {
-                        Logger.log('warn', 'stopRecordings error', { error: e.message });
-                    }
-                    
-                    stopAudioStream();
-
-                    let edyCompletionNotifyOk = false;
-                    try {
-                        edyCompletionNotifyOk = await notifyEdyAssessmentComplete(endReason);
-                    } catch (e) {
-                        console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
-                    }
-                    if (edyCompletionNotifyOk) {
                         try {
-                            if (window.parent && window.parent !== window) {
-                                window.parent.postMessage(
-                                    { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
-                                    EDY_PARENT_POSTMESSAGE_ORIGIN
-                                );
-                            }
-                        } catch (e) { /* ignore */ }
-                    }
+                            await submitPendingTranscript();
+                        } catch (e) {
+                            Logger.log('warn', 'submitPendingTranscript error', { error: e.message });
+                        }
 
-                    if (sharedMicStream) {
-                        sharedMicStream.getTracks().forEach(t => t.stop());
-                        sharedMicStream = null;
-                        console.log('Shared microphone stream stopped');
+                        try {
+                            Logger.log('info', 'stopRecordings starting', getViewDiagnostics({ endReason }));
+                            await stopRecordings();
+                        } catch (e) {
+                            Logger.log('warn', 'stopRecordings error', { error: e.message });
+                        }
+
+                        stopAudioStream();
+
+                        let edyCompletionNotifyOk = false;
+                        try {
+                            edyCompletionNotifyOk = await notifyEdyAssessmentComplete(endReason);
+                        } catch (e) {
+                            console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
+                        }
+                        if (edyCompletionNotifyOk) {
+                            try {
+                                if (window.parent && window.parent !== window) {
+                                    window.parent.postMessage(
+                                        { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
+                                        EDY_PARENT_POSTMESSAGE_ORIGIN
+                                    );
+                                }
+                            } catch (e) { /* ignore */ }
+                        }
+
+                        if (sharedMicStream) {
+                            sharedMicStream.getTracks().forEach(t => t.stop());
+                            sharedMicStream = null;
+                            console.log('Shared microphone stream stopped');
+                        }
+                    } finally {
+                        interviewRecordingsFinalizeInProgress = false;
                     }
                 })();
 

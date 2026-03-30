@@ -1194,7 +1194,8 @@ async def upload_recording(
 ):
     """
     Upload recordings to S3.
-    - Screen (main Tavus pipeline): s3://TAVUS_BUCKET/tavus/{conversation_id}/{ts_ms} — conversation_id from Lambda/DB only.
+    - Screen: (1) Tavus pipeline s3://TAVUS_BUCKET/tavus/{conversation_id}/{ts_ms}
+      (2) duplicate copy on AWS_S3_BUCKET at ai_video_to_audio_nterview/screen/{assessment_result_id}_{timestamp}.webm
     - Mic / combined / rrweb: existing ai_video_to_audio_nterview/... on AWS_S3_BUCKET.
     User mic (`audio`) schedules background STT + transcript JSON + Mongo update.
     """
@@ -1213,6 +1214,8 @@ async def upload_recording(
     target_bucket = AWS_S3_BUCKET
     s3_key: str
     filename: str
+    edy_temp_screen_key: str | None = None
+    edy_temp_screen_copy_error: str | None = None
 
     if recording_type == "screen":
         if not (user_id or "").strip() or not (video_token or "").strip():
@@ -1314,6 +1317,37 @@ async def upload_recording(
                 f"UPLOAD_OK screen bucket={target_bucket} key={s3_key} conversation_id={conversation_id} "
                 f"bytes={len(file_bytes)}"
             )
+            # Second copy: same object on edy-temp-videos (human-readable path, same as mic/combined uploads)
+            edy_filename = f"{assessment_result_id or session_id}_{timestamp}.webm"
+            edy_temp_screen_key = f"{base_folder}/screen/{edy_filename}"
+            try:
+                s3_client.upload_fileobj(
+                    io.BytesIO(file_bytes),
+                    AWS_S3_BUCKET,
+                    edy_temp_screen_key,
+                    ExtraArgs={
+                        "ContentType": content_type,
+                        "Metadata": {k: str(v) for k, v in meta.items() if v is not None},
+                    },
+                )
+                logger.info(
+                    "[Edy] Screen copy OK bucket=%s key=%s",
+                    AWS_S3_BUCKET,
+                    edy_temp_screen_key,
+                )
+                render_log(
+                    f"UPLOAD_OK screen_edytemp bucket={AWS_S3_BUCKET} key={edy_temp_screen_key} "
+                    f"bytes={len(file_bytes)}"
+                )
+            except Exception as copy_exc:
+                edy_temp_screen_copy_error = str(copy_exc)
+                logger.error(
+                    "[Edy] Screen copy to %s failed: %s | key=%s",
+                    AWS_S3_BUCKET,
+                    copy_exc,
+                    edy_temp_screen_key,
+                )
+                render_log(f"UPLOAD_SCREEN_EDYTEMP_FAIL key={edy_temp_screen_key!r} error={copy_exc!r}")
         else:
             logger.info(
                 "Uploaded to S3: s3://%s/%s | Assessment: %s",
@@ -1342,6 +1376,18 @@ async def upload_recording(
         if conversation_id:
             payload["conversation_id"] = conversation_id
             payload["tavus_recording_key"] = s3_key
+
+        if recording_type == "screen" and edy_temp_screen_key and not edy_temp_screen_copy_error:
+            payload["edy_temp_videos_screen"] = {
+                "s3_bucket": AWS_S3_BUCKET,
+                "s3_key": edy_temp_screen_key,
+                "s3_uri": f"s3://{AWS_S3_BUCKET}/{edy_temp_screen_key}",
+                "https_url": (
+                    f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{edy_temp_screen_key}"
+                ),
+            }
+        elif recording_type == "screen" and edy_temp_screen_copy_error:
+            payload["edy_temp_videos_screen_error"] = edy_temp_screen_copy_error
 
         if recording_type == "audio" and file_bytes:
             asyncio.create_task(
