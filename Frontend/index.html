@@ -1849,13 +1849,12 @@ registerProcessor('pcm-processor', PCMProcessor);
 
                 // 3. Start Screen Recording Video
                 // WARNING: Do not mix WebAudio tracks with getDisplayMedia video tracks in a new MediaStream.
-                // It silently hangs MediaRecorder on Chromium (0 chunks emitted). 
-                // We use the raw screenStream directly.
-                const options = {};
-                const mimeType = getSupportedMimeType('video');
-                if (mimeType) options.mimeType = mimeType;
-
-                screenRecorder = new MediaRecorder(screenStream, options);
+                // It silently hangs MediaRecorder on Chromium (0 chunks emitted).
+                // We use the raw screenStream directly (browser-default MediaRecorder mime).
+                screenRecorder = new MediaRecorder(screenStream);
+                console.log('screenRecorder created with browser default mime', {
+                    mimeType: screenRecorder.mimeType
+                });
                 screenChunks = [];
 
                 screenRecorder.onstart = () => {
@@ -1966,7 +1965,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                     }
                 };
 
-                screenRecorder.start(1000);
+                screenRecorder.start();
                 screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
