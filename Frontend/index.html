@@ -1804,6 +1804,36 @@ registerProcessor('pcm-processor', PCMProcessor);
                     audio: false
                 });
 
+                const previewVideo = document.createElement('video');
+                previewVideo.autoplay = true;
+                previewVideo.muted = true;
+                previewVideo.playsInline = true;
+                previewVideo.srcObject = screenStream;
+
+                await previewVideo.play();
+
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                const capVideoTrack = screenStream.getVideoTracks()[0];
+                const capDims = capVideoTrack && capVideoTrack.getSettings ? capVideoTrack.getSettings() : {};
+                canvas.width = capDims.width || 1280;
+                canvas.height = capDims.height || 720;
+
+                let drawLoopActive = true;
+
+                function drawFrame() {
+                    if (!drawLoopActive) return;
+                    try {
+                        ctx.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
+                    } catch (_) { /* e.g. video not ready yet */ }
+                    requestAnimationFrame(drawFrame);
+                }
+
+                drawFrame();
+
+                const canvasStream = canvas.captureStream(15);
+
                 // Use shared mic stream (already obtained) -> No longer needed separately, as it is mixed in recordingDestination
 
                 // Create combined stream: Screen Video + Mixed Audio (AI + Mic)
@@ -1847,12 +1877,9 @@ registerProcessor('pcm-processor', PCMProcessor);
                 };
                 combinedRecorder.start(1000);
 
-                // 3. Start Screen Recording Video
-                // WARNING: Do not mix WebAudio tracks with getDisplayMedia video tracks in a new MediaStream.
-                // It silently hangs MediaRecorder on Chromium (0 chunks emitted).
-                // We use the raw screenStream directly (browser-default MediaRecorder mime).
-                screenRecorder = new MediaRecorder(screenStream);
-                console.log('screenRecorder created with browser default mime', {
+                // 3. Start Screen Recording Video — record canvas.captureStream (relay), not raw display MediaStream
+                screenRecorder = new MediaRecorder(canvasStream);
+                console.log('screenRecorder created from canvas stream', {
                     mimeType: screenRecorder.mimeType
                 });
                 screenChunks = [];
@@ -1894,20 +1921,24 @@ registerProcessor('pcm-processor', PCMProcessor);
                 screenStream.getVideoTracks().forEach(track => {
                     track.onended = () => console.warn('screen video track ended');
                     track.onmute = () => console.warn('screen video track muted');
-                    track.onunmute = () => console.warn('screen video track unmuted');
+                    track.onunmute = () => console.warn('screen video track unmuted', {
+                        settings: track.getSettings ? track.getSettings() : null
+                    });
                 });
 
                 setTimeout(() => {
+                    const videoTracks = screenStream?.getVideoTracks?.() || [];
                     console.log('screenRecorder sanity', {
                         state: screenRecorder?.state,
                         mimeType: screenRecorder?.mimeType,
                         chunkCount: screenChunks.length,
-                        tracks: screenStream?.getTracks().map(t => ({
+                        tracks: videoTracks.map(t => ({
                             kind: t.kind,
                             readyState: t.readyState,
                             muted: t.muted,
                             enabled: t.enabled,
-                            label: t.label
+                            label: t.label,
+                            settings: t.getSettings ? t.getSettings() : null
                         }))
                     });
                 }, 3000);
@@ -1954,6 +1985,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                             console.error('Screen recording upload failed:', e);
                         }
                     } finally {
+                        drawLoopActive = false;
+                        try { previewVideo.pause(); } catch (_) { }
+                        try { previewVideo.srcObject = null; } catch (_) { }
+                        try { canvasStream.getTracks().forEach(t => t.stop()); } catch (_) { }
                         try {
                             screenStream?.getTracks().forEach(t => t.stop());
                         } catch (_) { /* already ended */ }
