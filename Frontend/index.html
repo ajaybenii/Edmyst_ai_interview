@@ -2886,7 +2886,8 @@ registerProcessor('pcm-processor', PCMProcessor);
                     silenceWatchInterval = null;
                 }
                 playClickSound('end');
-                await submitPendingTranscript();
+
+                // --- IMMEDIATE UI: show completion screen right away ---
                 if (videoInterval) clearInterval(videoInterval);
                 if (timerInterval) clearInterval(timerInterval);
                 ws?.close();
@@ -2896,7 +2897,6 @@ registerProcessor('pcm-processor', PCMProcessor);
                 isActive = false;
 
                 document.getElementById('fullscreenWarning').classList.remove('active');
-
                 if (document.fullscreenElement) {
                     document.exitFullscreen().catch(() => { });
                 }
@@ -2905,38 +2905,6 @@ registerProcessor('pcm-processor', PCMProcessor);
                 timerEl.classList.remove('active', 'warning', 'critical');
                 document.getElementById('timerDisplay').textContent = '30:00';
                 interviewStartTime = null;
-
-                try {
-                    await stopRecordings();
-                } catch (e) {
-                    Logger.log('warn', 'stopRecordings error', { error: e.message });
-                }
-                // stopAudioStream stops mediaStream tracks — must run after recorders finish or final WebM chunk/onstop can break
-                stopAudioStream();
-
-                // Recruiter / Mongo: Completed (after transcript + uploads; failures only log — user still sees success UI)
-                let edyCompletionNotifyOk = false;
-                try {
-                    edyCompletionNotifyOk = await notifyEdyAssessmentComplete(endReason);
-                } catch (e) {
-                    console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
-                }
-                if (edyCompletionNotifyOk) {
-                    try {
-                        if (window.parent && window.parent !== window) {
-                            window.parent.postMessage(
-                                { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
-                                EDY_PARENT_POSTMESSAGE_ORIGIN
-                            );
-                        }
-                    } catch (e) { /* ignore */ }
-                }
-
-                if (sharedMicStream) {
-                    sharedMicStream.getTracks().forEach(t => t.stop());
-                    sharedMicStream = null;
-                    console.log('Shared microphone stream stopped');
-                }
 
                 updateStatus('Interview Ended', false);
 
@@ -2955,6 +2923,47 @@ registerProcessor('pcm-processor', PCMProcessor);
                 const el = document.getElementById('interviewComplete');
                 if (el) el.classList.add('active');
                 startCompletionCelebration();
+
+                // --- BACKGROUND TASKS: Uploads & API calls without blocking UI ---
+                (async () => {
+                    try {
+                        await submitPendingTranscript();
+                    } catch (e) {
+                         Logger.log('warn', 'submitPendingTranscript error', { error: e.message });
+                    }
+
+                    try {
+                        await stopRecordings();
+                    } catch (e) {
+                        Logger.log('warn', 'stopRecordings error', { error: e.message });
+                    }
+                    
+                    stopAudioStream();
+
+                    let edyCompletionNotifyOk = false;
+                    try {
+                        edyCompletionNotifyOk = await notifyEdyAssessmentComplete(endReason);
+                    } catch (e) {
+                        console.warn('[Edy] notifyEdyAssessmentComplete outer', e);
+                    }
+                    if (edyCompletionNotifyOk) {
+                        try {
+                            if (window.parent && window.parent !== window) {
+                                window.parent.postMessage(
+                                    { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
+                                    EDY_PARENT_POSTMESSAGE_ORIGIN
+                                );
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    if (sharedMicStream) {
+                        sharedMicStream.getTracks().forEach(t => t.stop());
+                        sharedMicStream = null;
+                        console.log('Shared microphone stream stopped');
+                    }
+                })();
+
             } finally {
                 stopInterviewInProgress = false;
             }
