@@ -1882,7 +1882,14 @@ registerProcessor('pcm-processor', PCMProcessor);
                         type: e.data?.type,
                         state: screenRecorder?.state
                     });
-                    if (e.data && e.data.size > 0) screenChunks.push(e.data);
+
+                    if (e.data && e.data.size > 0) {
+                        screenChunks.push(e.data);
+                        console.log('screenChunks total', {
+                            count: screenChunks.length,
+                            totalBytes: screenChunks.reduce((n, c) => n + c.size, 0)
+                        });
+                    }
                 };
 
                 screenStream.getVideoTracks().forEach(track => {
@@ -1934,6 +1941,13 @@ registerProcessor('pcm-processor', PCMProcessor);
                             });
                             return;
                         }
+                        if (blob.size < 5000) {
+                            Logger.log('warn', 'Screen recording skipped: blob too small to be valid video', {
+                                blobSize: blob.size,
+                                chunkCount: screenChunks.length
+                            });
+                            return;
+                        }
                         try {
                             await saveRecording(blob, 'screen');
                         } catch (e) {
@@ -1952,7 +1966,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                     }
                 };
 
-                screenRecorder.start();
+                screenRecorder.start(1000);
                 screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
