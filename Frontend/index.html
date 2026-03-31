@@ -963,37 +963,175 @@
         .fullscreen-prompt-overlay,
         .screenshare-warning-overlay,
         .fullscreen-warning-overlay,
-        .server-loader-overlay,
-        .setup-prompt-overlay,
-        .photo-capture-overlay,
-        .ready-message-overlay {
+        .server-loader-overlay {
             display: none;
         }
 
         .fullscreen-prompt-overlay.active,
         .screenshare-warning-overlay.active,
         .fullscreen-warning-overlay.active,
-        .server-loader-overlay.active,
-        .setup-prompt-overlay.active,
-        .photo-capture-overlay.active,
-        .ready-message-overlay.active {
+        .server-loader-overlay.active {
             display: flex;
         }
 
-        /* Photo Capture Overlay Specific */
+        /* ============ SETUP VIEW ============ */
+        .setup-view {
+            position: fixed;
+            inset: 0;
+            z-index: 9998;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .setup-container {
+            max-width: 560px;
+            width: 100%;
+        }
+        .setup-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .setup-logo {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .setup-title {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text);
+            margin: 0 0 8px;
+        }
+        .setup-subtitle {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin: 0;
+        }
+
+        /* Step indicators */
+        .setup-steps {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 32px;
+        }
+        .setup-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            opacity: 0.4;
+            transition: all 0.3s;
+        }
+        .setup-step.active {
+            opacity: 1;
+        }
+        .setup-step.done {
+            opacity: 1;
+        }
+        .step-number {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--border);
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .setup-step.active .step-number {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+        .setup-step.done .step-number {
+            background: #16a34a;
+            color: white;
+        }
+        .step-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .setup-step-line {
+            width: 48px;
+            height: 2px;
+            background: var(--border);
+            margin: 0 8px;
+            margin-bottom: 20px;
+            transition: background 0.3s;
+        }
+        .setup-step-line.done {
+            background: #16a34a;
+        }
+
+        /* Setup cards */
+        .setup-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 40px 36px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.07);
+            animation: fadeSlideUp 0.4s ease;
+        }
+        @keyframes fadeSlideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .setup-card-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .setup-card-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 10px;
+        }
+        .setup-card-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+        .setup-card-status {
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--red);
+            font-weight: 500;
+        }
+        .setup-card-check {
+            font-size: 16px;
+            font-weight: 600;
+            color: #16a34a;
+            margin-top: 8px;
+        }
+
+        /* Photo in setup */
         #photoCaptureVideo {
             width: 100%;
-            max-width: 400px;
+            max-width: 360px;
             border-radius: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
             background: #000;
+            aspect-ratio: 4/3;
+            object-fit: cover;
         }
         #photoCapturedImg {
             display: none;
             width: 100%;
-            max-width: 400px;
+            max-width: 360px;
             border-radius: 12px;
-            margin-bottom: 16px;
+            margin-bottom: 8px;
             border: 3px solid var(--accent);
         }
         #photoConfirmActions {
@@ -1098,46 +1236,76 @@
     <div class="noise"></div>
     <div class="accent-stripe"></div>
 
-    <!-- Step 0: Begin Interview Setup (user gesture for getDisplayMedia in iframe) -->
-    <div class="setup-prompt-overlay" id="setupPromptOverlay">
-        <div class="overlay-card">
-            <div class="overlay-icon">🎯</div>
-            <div class="overlay-title">Welcome to Your Interview</div>
-            <div class="overlay-msg">We need to set up a few things before your interview begins — screen sharing, fullscreen mode, and a quick photo verification.<br><br><strong>💡 Tip:</strong> When prompted for screen sharing, please select <strong>"Entire Screen"</strong> for the best experience.</div>
-            <button class="overlay-btn" id="beginSetupBtn" onclick="beginInterviewSetup()">🚀 Begin Interview Setup</button>
+    <!-- ===================== SETUP VIEW ===================== -->
+    <div id="setupView" class="setup-view">
+        <div class="setup-container">
+            <div class="setup-header">
+                <div class="setup-logo">🎙️</div>
+                <h1 class="setup-title">Interview Setup</h1>
+                <p class="setup-subtitle">Complete the following steps to prepare for your interview</p>
+            </div>
+
+            <!-- Step Indicators -->
+            <div class="setup-steps">
+                <div class="setup-step active" id="setupStep1">
+                    <div class="step-number">1</div>
+                    <div class="step-label">Screen Share</div>
+                </div>
+                <div class="setup-step-line" id="setupLine1"></div>
+                <div class="setup-step" id="setupStep2">
+                    <div class="step-number">2</div>
+                    <div class="step-label">Fullscreen</div>
+                </div>
+                <div class="setup-step-line" id="setupLine2"></div>
+                <div class="setup-step" id="setupStep3">
+                    <div class="step-number">3</div>
+                    <div class="step-label">Photo Capture</div>
+                </div>
+            </div>
+
+            <!-- Step Content Area -->
+            <div class="setup-content">
+                <!-- Step 1: Screen Share -->
+                <div class="setup-card" id="setupCard1">
+                    <div class="setup-card-icon">🖥️</div>
+                    <div class="setup-card-title">Share Your Entire Screen</div>
+                    <div class="setup-card-desc">Screen sharing is required for proctoring. When prompted, please select <strong>"Entire Screen"</strong> for the best experience.</div>
+                    <button class="overlay-btn" id="setupScreenShareBtn" onclick="setupStepScreenShare()">🚀 Begin Screen Share</button>
+                    <div class="setup-card-status" id="setupStatus1"></div>
+                </div>
+
+                <!-- Step 2: Fullscreen (auto after screen share) -->
+                <div class="setup-card" id="setupCard2" style="display:none;">
+                    <div class="setup-card-icon">🔲</div>
+                    <div class="setup-card-title">Fullscreen Mode Active</div>
+                    <div class="setup-card-desc">Your browser is now in fullscreen mode for a secure interview environment.</div>
+                    <div class="setup-card-check">✅ Fullscreen activated</div>
+                </div>
+
+                <!-- Step 3: Photo Capture -->
+                <div class="setup-card" id="setupCard3" style="display:none;">
+                    <div class="setup-card-icon">📸</div>
+                    <div class="setup-card-title">Capture Your Photo</div>
+                    <div class="setup-card-desc">Position yourself clearly in the frame and capture your photo. This is mandatory.</div>
+                    <div id="photoCapturePreview" style="display:flex; flex-direction:column; align-items:center; margin:16px 0;">
+                        <video id="photoCaptureVideo" autoplay muted playsinline></video>
+                        <canvas id="photoCaptureCanvas" style="display:none;"></canvas>
+                        <img id="photoCapturedImg" alt="Captured photo" />
+                    </div>
+                    <div id="photoCaptureActions">
+                        <button class="overlay-btn" id="capturePhotoBtn" onclick="capturePhoto()">📸 Capture Candidate Photo</button>
+                    </div>
+                    <div id="photoConfirmActions">
+                        <button class="overlay-btn danger" onclick="retakePhoto()">🔄 Retake</button>
+                        <button class="overlay-btn" onclick="confirmPhoto()">✅ Confirm & Continue</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- Step 4: Photo Capture (mandatory) -->
-    <div class="photo-capture-overlay" id="photoCaptureOverlay">
-        <div class="overlay-card" style="max-width: 520px;">
-            <div class="overlay-icon">📸</div>
-            <div class="overlay-title">Capture Your Photo</div>
-            <div class="overlay-msg">Please position yourself clearly in the frame and capture your photo. This is mandatory before starting the interview.</div>
-            <div id="photoCapturePreview" style="display:flex; flex-direction:column; align-items:center;">
-                <video id="photoCaptureVideo" autoplay muted playsinline></video>
-                <canvas id="photoCaptureCanvas" style="display:none;"></canvas>
-                <img id="photoCapturedImg" alt="Captured photo" />
-            </div>
-            <div id="photoCaptureActions" style="margin-top:16px;">
-                <button class="overlay-btn" id="capturePhotoBtn" onclick="capturePhoto()">📸 Capture Candidate Photo</button>
-            </div>
-            <div id="photoConfirmActions" style="margin-top:16px;">
-                <button class="overlay-btn danger" onclick="retakePhoto()">🔄 Retake</button>
-                <button class="overlay-btn" onclick="confirmPhoto()">✅ Confirm & Continue</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Step 5: Ready Message -->
-    <div class="ready-message-overlay" id="readyMessageOverlay">
-        <div class="overlay-card">
-            <div class="overlay-icon">✅</div>
-            <div class="overlay-title">You're All Set!</div>
-            <div class="overlay-msg">When you are ready, please click on the <strong>Start Interview</strong> button to begin your session. Good luck!</div>
-            <button class="overlay-btn" onclick="dismissReadyMessage()">Next</button>
-        </div>
-    </div>
+    <!-- ===================== INTERVIEW VIEW (hidden until setup complete) ===================== -->
+    <div id="interviewView" style="display:none;">
 
     <!-- Fullscreen Prompt -->
     <div class="fullscreen-prompt-overlay" id="fullscreenPrompt">
@@ -1198,7 +1366,7 @@
         </div>
     </div>
 
-    <div class="container">
+    <div class="container" id="interviewContainer">
         <div class="header">
             <div class="header-left">
                 <div class="logo-mark" id="brandLogoMark">🎙️</div>
@@ -1302,6 +1470,7 @@
             </div>
         </div>
     </div>
+    </div> <!-- end #interviewView -->
 
     <script>
         // Audio Context for click sounds
@@ -2346,12 +2515,13 @@ registerProcessor('pcm-processor', PCMProcessor);
         window.addEventListener('load', async () => {
             setupSecurityListeners();
             await initializeMedia();
-            // Show the setup prompt overlay (user gesture needed for getDisplayMedia in iframe)
-            if (!isMobile()) {
-                document.getElementById('setupPromptOverlay').classList.add('active');
-            } else {
-                // Mobile: no screen share/fullscreen, go straight to photo capture
-                showPhotoCaptureOverlay();
+            // Setup view is visible by default (z-index 9998)
+            // On mobile, skip screen share step — go straight to photo
+            if (isMobile()) {
+                markStepDone(1);
+                markStepDone(2);
+                activateStep(3);
+                showPhotoCaptureStep();
             }
         });
 
@@ -2443,26 +2613,39 @@ registerProcessor('pcm-processor', PCMProcessor);
             try {
                 await startScreenRecording();
                 document.getElementById('screenshareWarning').classList.remove('active');
-                // Continue the setup flow after screen share retry
-                if (!isMobile() && !isFullscreenActive()) {
-                    try { await goFullscreen(document.documentElement); } catch (_) { }
-                }
-                showPhotoCaptureOverlay();
+                screenSetupCompleted = true;
+                // Continue setup flow
+                markStepDone(1);
+                await setupStepFullscreen();
             } catch (e) {
                 console.warn('Screen share still failed after warning dismiss', e);
             }
         }
 
         // ==========================================
-        // NEW ONBOARDING FLOW FUNCTIONS
+        // SETUP VIEW STEP FUNCTIONS
         // ==========================================
 
-        /** Step 1: User clicks "Begin Interview Setup" */
-        async function beginInterviewSetup() {
-            console.log('SETUP: begin clicked');
-            document.getElementById('setupPromptOverlay').classList.remove('active');
+        /** Helper: mark a step as done */
+        function markStepDone(n) {
+            const step = document.getElementById(`setupStep${n}`);
+            if (step) { step.classList.remove('active'); step.classList.add('done'); }
+            const line = document.getElementById(`setupLine${n}`);
+            if (line) line.classList.add('done');
+        }
 
-            // Step 2: Screen Share (recording starts immediately inside startScreenRecording)
+        /** Helper: activate a step */
+        function activateStep(n) {
+            const step = document.getElementById(`setupStep${n}`);
+            if (step) { step.classList.add('active'); }
+        }
+
+        /** Step 1: User clicks "Begin Screen Share" */
+        async function setupStepScreenShare() {
+            console.log('SETUP: step 1 — screen share clicked');
+            const statusEl = document.getElementById('setupStatus1');
+            statusEl.textContent = '';
+
             try {
                 console.log('SETUP: requesting screen share');
                 await startScreenRecording();
@@ -2470,43 +2653,65 @@ registerProcessor('pcm-processor', PCMProcessor);
                 console.log('SETUP: screen share success', { isRecordingScreen });
             } catch (e) {
                 console.error('SETUP: screen share failed', e);
-                document.getElementById('screenshareWarning').classList.add('active');
-                return; // Flow blocked until screen share granted via dismissScreenShareWarning
+                statusEl.textContent = '❌ Screen share was denied or cancelled. Please try again and select "Entire Screen".';
+                return;
             }
 
-            // Step 3: Fullscreen
+            // Step 1 done → proceed to Step 2 (Fullscreen)
+            markStepDone(1);
+            activateStep(2);
+            await setupStepFullscreen();
+        }
+
+        /** Step 2: Fullscreen (automatic after screen share) */
+        async function setupStepFullscreen() {
+            console.log('SETUP: step 2 — fullscreen');
+            document.getElementById('setupCard1').style.display = 'none';
+            document.getElementById('setupCard2').style.display = 'block';
+
             if (!isFullscreenActive()) {
                 try {
-                    console.log('SETUP: requesting fullscreen');
                     await goFullscreen(document.documentElement);
                     console.log('SETUP: fullscreen result', { active: isFullscreenActive() });
                 } catch (e) {
                     console.warn('SETUP: fullscreen failed', e);
                 }
-            } else {
-                console.log('SETUP: already in fullscreen');
             }
 
-            // Verify fullscreen actually activated
             if (!isFullscreenActive()) {
-                console.warn('SETUP: fullscreen not active after attempt — marking setup failed');
-                screenSetupCompleted = false;
-                setupCompleted = false;
-                // Show retry overlay
-                document.getElementById('setupPromptOverlay').classList.add('active');
-                document.querySelector('#setupPromptOverlay .overlay-msg').innerHTML =
-                    '⚠️ <strong>Fullscreen did not activate.</strong> Please retry setup and select <strong>"Entire Screen"</strong> when prompted for screen sharing.';
-                document.querySelector('#setupPromptOverlay .overlay-title').textContent = 'Setup Retry Needed';
+                console.warn('SETUP: fullscreen not active — retrying setup');
+                document.getElementById('setupCard2').querySelector('.setup-card-check').textContent = '⚠️ Fullscreen failed. Please try again.';
+                document.getElementById('setupCard2').innerHTML += '<button class="overlay-btn" style="margin-top:16px" onclick="retryFullscreen()">🔲 Enter Fullscreen</button>';
                 return;
             }
 
-            // Step 4: Photo Capture
-            console.log('SETUP: showing photo overlay');
-            showPhotoCaptureOverlay();
+            // Step 2 done → proceed to Step 3 (Photo)
+            markStepDone(2);
+            await new Promise(r => setTimeout(r, 800)); // Brief pause to show success
+            activateStep(3);
+            showPhotoCaptureStep();
         }
 
-        /** Show the photo capture overlay with camera preview */
-        function showPhotoCaptureOverlay() {
+        /** Retry fullscreen from step 2 */
+        async function retryFullscreen() {
+            try {
+                await goFullscreen(document.documentElement);
+            } catch (_) {}
+
+            if (isFullscreenActive()) {
+                markStepDone(2);
+                activateStep(3);
+                showPhotoCaptureStep();
+            }
+        }
+
+        /** Step 3: Show photo capture */
+        function showPhotoCaptureStep() {
+            console.log('SETUP: step 3 — photo capture');
+            document.getElementById('setupCard1').style.display = 'none';
+            document.getElementById('setupCard2').style.display = 'none';
+            document.getElementById('setupCard3').style.display = 'block';
+
             const video = document.getElementById('photoCaptureVideo');
             if (videoStream) {
                 video.srcObject = videoStream;
@@ -2516,7 +2721,6 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('photoCaptureVideo').style.display = 'block';
             document.getElementById('photoCaptureActions').style.display = 'block';
             document.getElementById('photoConfirmActions').style.display = 'none';
-            document.getElementById('photoCaptureOverlay').classList.add('active');
         }
 
         /** Capture a still frame from the camera */
@@ -2544,7 +2748,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             document.getElementById('photoConfirmActions').style.display = 'none';
         }
 
-        /** Confirm photo, upload to S3, and proceed */
+        /** Confirm photo, upload to S3, and transition to interview view */
         async function confirmPhoto() {
             const btn = document.querySelector('#photoConfirmActions .overlay-btn:last-child');
             btn.textContent = '⏳ Uploading...';
@@ -2557,18 +2761,20 @@ registerProcessor('pcm-processor', PCMProcessor);
             } catch (e) {
                 console.error('Photo upload failed:', e);
                 Logger.log('error', 'Candidate photo upload failed', { error: e.message });
-                // Continue anyway — don't block the interview
             }
 
             btn.textContent = '✅ Confirm & Continue';
             btn.disabled = false;
 
-            // Hide photo overlay, show ready message
+            // Mark setup as complete
             photoCaptureCompleted = true;
             setupCompleted = screenSetupCompleted && photoCaptureCompleted;
-            console.log('SETUP: photo confirmed', { setupCompleted, screenSetupCompleted, photoCaptureCompleted });
-            document.getElementById('photoCaptureOverlay').classList.remove('active');
-            document.getElementById('readyMessageOverlay').classList.add('active');
+            markStepDone(3);
+            console.log('SETUP: complete', { setupCompleted, screenSetupCompleted, photoCaptureCompleted });
+
+            // Transition: hide setup view, show interview view
+            document.getElementById('setupView').style.display = 'none';
+            document.getElementById('interviewView').style.display = 'block';
         }
 
         /** Upload candidate photo to S3 via backend */
@@ -2594,11 +2800,6 @@ registerProcessor('pcm-processor', PCMProcessor);
             const data = await response.json();
             console.log('Candidate photo uploaded:', data);
             Logger.log('info', 'Candidate photo uploaded', { s3_key: data.s3_key });
-        }
-
-        /** Dismiss the ready message and reveal the interview controls */
-        function dismissReadyMessage() {
-            document.getElementById('readyMessageOverlay').classList.remove('active');
         }
 
         function toggleCamera() {
