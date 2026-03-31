@@ -1103,7 +1103,7 @@
         <div class="overlay-card">
             <div class="overlay-icon">🎯</div>
             <div class="overlay-title">Welcome to Your Interview</div>
-            <div class="overlay-msg">We need to set up a few things before your interview begins — screen sharing, fullscreen mode, and a quick photo verification. Click below to get started.</div>
+            <div class="overlay-msg">We need to set up a few things before your interview begins — screen sharing, fullscreen mode, and a quick photo verification.<br><br><strong>💡 Tip:</strong> When prompted for screen sharing, please select <strong>"Entire Screen"</strong> for the best experience.</div>
             <button class="overlay-btn" id="beginSetupBtn" onclick="beginInterviewSetup()">🚀 Begin Interview Setup</button>
         </div>
     </div>
@@ -1153,9 +1153,9 @@
         <div class="overlay-card">
             <div class="overlay-icon">📹</div>
             <div class="overlay-title">Screen Sharing Required</div>
-            <div class="overlay-msg">Screen sharing is mandatory to start the interview. Please allow it when prompted.
+            <div class="overlay-msg">Screen sharing is mandatory to start the interview. Please allow it when prompted and select <strong>"Entire Screen"</strong>.
             </div>
-            <button class="overlay-btn danger" onclick="dismissScreenShareWarning()">Got it</button>
+            <button class="overlay-btn danger" onclick="dismissScreenShareWarning()">🔄 Retry Screen Share</button>
         </div>
     </div>
     <div class="fullscreen-warning-overlay" id="fullscreenWarning">
@@ -1881,6 +1881,18 @@ registerProcessor('pcm-processor', PCMProcessor);
                     audio: false
                 });
 
+                // Log selected source type
+                const capTrack = screenStream.getVideoTracks()[0];
+                const capSettings = capTrack?.getSettings ? capTrack.getSettings() : null;
+                console.log('SCREEN_SOURCE_SELECTED', {
+                    label: capTrack?.label,
+                    displaySurface: capSettings?.displaySurface,
+                    width: capSettings?.width,
+                    height: capSettings?.height,
+                    frameRate: capSettings?.frameRate,
+                    settings: capSettings
+                });
+
                 const previewVideo = document.createElement('video');
                 previewVideo.autoplay = true;
                 previewVideo.muted = true;
@@ -2473,6 +2485,19 @@ registerProcessor('pcm-processor', PCMProcessor);
                 }
             } else {
                 console.log('SETUP: already in fullscreen');
+            }
+
+            // Verify fullscreen actually activated
+            if (!isFullscreenActive()) {
+                console.warn('SETUP: fullscreen not active after attempt — marking setup failed');
+                screenSetupCompleted = false;
+                setupCompleted = false;
+                // Show retry overlay
+                document.getElementById('setupPromptOverlay').classList.add('active');
+                document.querySelector('#setupPromptOverlay .overlay-msg').innerHTML =
+                    '⚠️ <strong>Fullscreen did not activate.</strong> Please retry setup and select <strong>"Entire Screen"</strong> when prompted for screen sharing.';
+                document.querySelector('#setupPromptOverlay .overlay-title').textContent = 'Setup Retry Needed';
+                return;
             }
 
             // Step 4: Photo Capture
