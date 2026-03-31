@@ -1218,10 +1218,18 @@ async def upload_recording(
     edy_temp_screen_copy_error: str | None = None
 
     if recording_type == "screen":
+        # Screen recording: simple upload to edy-temp-videos only
+        subfolder = "screen"
+        extension = ".webm"
+        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
+        s3_key = f"{base_folder}/{subfolder}/{filename}"
+
+    elif recording_type == "combined_audio":
+        # Combined audio: primary upload to Tavus bucket (needs conversation_id)
         if not (user_id or "").strip() or not (video_token or "").strip():
             raise HTTPException(
                 status_code=400,
-                detail="user_id and video_token are required for screen recording",
+                detail="user_id and video_token are required for combined_audio recording",
             )
         conversation_id = await resolve_conversation_id_for_screen_upload(
             user_id, video_token, assessment_result_id
@@ -1231,28 +1239,28 @@ async def upload_recording(
             if cand and _plausible_conversation_id(cand):
                 conversation_id = cand
                 logger.warning(
-                    "[Tavus] Using client conversation_id for screen S3 key (ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD) "
+                    "[Tavus] Using client conversation_id for combined_audio S3 key "
                     "assessment_result_id=%s",
                     assessment_result_id,
                 )
                 render_log(
-                    f"UPLOAD_SCREEN_CLIENT_CID_FALLBACK conversation_id={conversation_id!r} "
+                    f"UPLOAD_COMBINED_CLIENT_CID_FALLBACK conversation_id={conversation_id!r} "
                     f"assessment_result_id={assessment_result_id!r}"
                 )
         if not conversation_id:
             logger.error(
-                "[Tavus] conversation_id unresolved | assessment_result_id=%s video_token=%s user_id=%s",
+                "[Tavus] conversation_id unresolved for combined_audio | assessment_result_id=%s video_token=%s user_id=%s",
                 assessment_result_id,
                 video_token,
                 user_id,
             )
             render_log(
-                f"UPLOAD_SCREEN_FAIL no_conversation_id assessment_result_id={assessment_result_id!r} "
+                f"UPLOAD_COMBINED_FAIL no_conversation_id assessment_result_id={assessment_result_id!r} "
                 f"video_token={video_token!r}"
             )
             raise HTTPException(
                 status_code=400,
-                detail="conversation_id could not be resolved for this session; "
+                detail="conversation_id could not be resolved for combined_audio; "
                 "fix Lambda session JSON, set CONVERSATION_RESOLVE_URL, or for dev only set "
                 "ALLOW_CLIENT_CONVERSATION_ID_FOR_SCREEN_UPLOAD=1 and pass conversation_id in the form",
             )
@@ -1263,15 +1271,11 @@ async def upload_recording(
         ct_out = content_type
         if "webm" not in (ct_out or "").lower():
             if file_bytes[:4] == b"\x1a\x45\xdf\xa3":
-                ct_out = "video/webm"
-            elif not (ct_out or "").startswith("video/"):
-                ct_out = "video/webm"
+                ct_out = "audio/webm"
+            elif not (ct_out or "").startswith("audio/"):
+                ct_out = "audio/webm"
         content_type = ct_out
-    elif recording_type == "combined_audio":
-        subfolder = "combined_audio"
-        extension = ".webm"
-        filename = f"{assessment_result_id or session_id}_{timestamp}{extension}"
-        s3_key = f"{base_folder}/{subfolder}/{filename}"
+
     elif recording_type == "rrweb":
         subfolder = "rrweb"
         extension = ".json"
@@ -1310,49 +1314,49 @@ async def upload_recording(
             },
         )
 
-        if recording_type == "screen":
+        if recording_type == "combined_audio" and conversation_id:
             logger.info(
-                "[Tavus] Screen upload OK bucket=%s key=%s conversation_id=%s assessment_result_id=%s",
+                "[Tavus] Combined audio upload OK bucket=%s key=%s conversation_id=%s assessment_result_id=%s",
                 target_bucket,
                 s3_key,
                 conversation_id,
                 assessment_result_id,
             )
             render_log(
-                f"UPLOAD_OK screen bucket={target_bucket} key={s3_key} conversation_id={conversation_id} "
+                f"UPLOAD_OK combined_audio bucket={target_bucket} key={s3_key} conversation_id={conversation_id} "
                 f"bytes={len(file_bytes)}"
             )
-            # Second copy: same object on edy-temp-videos (human-readable path, same as mic/combined uploads)
+            # Second copy: duplicate on edy-temp-videos (human-readable path)
             edy_filename = f"{assessment_result_id or session_id}_{timestamp}.webm"
-            edy_temp_screen_key = f"{base_folder}/screen/{edy_filename}"
+            edy_temp_combined_key = f"{base_folder}/combined_audio/{edy_filename}"
             try:
                 s3_client.upload_fileobj(
                     io.BytesIO(file_bytes),
                     AWS_S3_BUCKET,
-                    edy_temp_screen_key,
+                    edy_temp_combined_key,
                     ExtraArgs={
                         "ContentType": content_type,
                         "Metadata": {k: str(v) for k, v in meta.items() if v is not None},
                     },
                 )
                 logger.info(
-                    "[Edy] Screen copy OK bucket=%s key=%s",
+                    "[Edy] Combined audio copy OK bucket=%s key=%s",
                     AWS_S3_BUCKET,
-                    edy_temp_screen_key,
+                    edy_temp_combined_key,
                 )
                 render_log(
-                    f"UPLOAD_OK screen_edytemp bucket={AWS_S3_BUCKET} key={edy_temp_screen_key} "
+                    f"UPLOAD_OK combined_edytemp bucket={AWS_S3_BUCKET} key={edy_temp_combined_key} "
                     f"bytes={len(file_bytes)}"
                 )
             except Exception as copy_exc:
                 edy_temp_screen_copy_error = str(copy_exc)
                 logger.error(
-                    "[Edy] Screen copy to %s failed: %s | key=%s",
+                    "[Edy] Combined audio copy to %s failed: %s | key=%s",
                     AWS_S3_BUCKET,
                     copy_exc,
-                    edy_temp_screen_key,
+                    edy_temp_combined_key,
                 )
-                render_log(f"UPLOAD_SCREEN_EDYTEMP_FAIL key={edy_temp_screen_key!r} error={copy_exc!r}")
+                render_log(f"UPLOAD_COMBINED_EDYTEMP_FAIL key={edy_temp_combined_key!r} error={copy_exc!r}")
         else:
             logger.info(
                 "Uploaded to S3: s3://%s/%s | Assessment: %s",
@@ -1382,17 +1386,17 @@ async def upload_recording(
             payload["conversation_id"] = conversation_id
             payload["tavus_recording_key"] = s3_key
 
-        if recording_type == "screen" and edy_temp_screen_key and not edy_temp_screen_copy_error:
-            payload["edy_temp_videos_screen"] = {
+        if recording_type == "combined_audio" and edy_temp_combined_key and not edy_temp_screen_copy_error:
+            payload["edy_temp_videos_combined"] = {
                 "s3_bucket": AWS_S3_BUCKET,
-                "s3_key": edy_temp_screen_key,
-                "s3_uri": f"s3://{AWS_S3_BUCKET}/{edy_temp_screen_key}",
+                "s3_key": edy_temp_combined_key,
+                "s3_uri": f"s3://{AWS_S3_BUCKET}/{edy_temp_combined_key}",
                 "https_url": (
-                    f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{edy_temp_screen_key}"
+                    f"https://{AWS_S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{edy_temp_combined_key}"
                 ),
             }
-        elif recording_type == "screen" and edy_temp_screen_copy_error:
-            payload["edy_temp_videos_screen_error"] = edy_temp_screen_copy_error
+        elif recording_type == "combined_audio" and edy_temp_screen_copy_error:
+            payload["edy_temp_videos_combined_error"] = edy_temp_screen_copy_error
 
         if recording_type == "audio" and file_bytes:
             asyncio.create_task(

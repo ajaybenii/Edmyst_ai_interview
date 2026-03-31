@@ -2205,7 +2205,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             formData.append('assessment_result_id', sessionMetadata.assessmentResultId || '');
             formData.append('user_id', sessionMetadata.userId || '');
             formData.append('video_token', sessionMetadata.videoToken || '');
-            if (type === 'screen' && sessionMetadata.conversationId) {
+            if (type === 'combined_audio' && sessionMetadata.conversationId) {
                 formData.append('conversation_id', sessionMetadata.conversationId);
             }
 
