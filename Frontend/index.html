@@ -3614,6 +3614,24 @@ registerProcessor('pcm-processor', PCMProcessor);
                 // --- BACKGROUND TASKS: Uploads & API calls without blocking UI ---
                 (async () => {
                     interviewRecordingsFinalizeInProgress = true;
+                    // Last user chunk may still be in userTextBuffer if session ended before isFinal.
+                    try {
+                        const pendingUser = String(userTextBuffer || '').trim();
+                        if (pendingUser.length > 0 && !pendingUser.includes('[SYSTEM]')) {
+                            interviewTranscriptTurns.push({ role: 'user', content: pendingUser });
+                        }
+                    } catch (ePending) { /* ignore */ }
+                    // Snapshot before submitPendingTranscript() — that call clears interviewTranscriptTurns on success.
+                    // Parent (Amplify) persists this for Mongo / scoring (Tavus-shaped: { role, content }[]).
+                    const transcriptSnapshot = interviewTranscriptTurns
+                        .map(function (t) {
+                            var role = t && t.role === 'user' ? 'user' : 'assistant';
+                            var content = String((t && t.content) || '').trim();
+                            return { role: role, content: content };
+                        })
+                        .filter(function (t) {
+                            return t.content.length > 0;
+                        });
                     try {
                         try {
                             await submitPendingTranscript();
@@ -3640,9 +3658,16 @@ registerProcessor('pcm-processor', PCMProcessor);
                             try {
                                 if (window.parent && window.parent !== window) {
                                     window.parent.postMessage(
-                                        { type: 'EDY_AUDIO_INTERVIEW_COMPLETE', source: 'edmyst-audio-interview' },
+                                        {
+                                            type: 'EDY_AUDIO_INTERVIEW_COMPLETE',
+                                            source: 'edmyst-audio-interview',
+                                            transcript: transcriptSnapshot
+                                        },
                                         EDY_PARENT_POSTMESSAGE_ORIGIN
                                     );
+                                    console.log('[EdyAudioInterview] postMessage to parent', {
+                                        transcriptTurns: transcriptSnapshot.length
+                                    });
                                 }
                             } catch (e) { /* ignore */ }
                         }

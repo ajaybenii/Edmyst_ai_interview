@@ -237,6 +237,50 @@ def put_s3_communication_json_sync(
     return key
 
 
+def put_s3_combined_transcript_json_sync(
+    s3_client: Any,
+    bucket: str,
+    base_folder: str,
+    assessment_result_id: str,
+    user_id: str,
+    video_token: str,
+    merged_messages: list[dict[str, str]],
+) -> str:
+    """
+    Upload combined AI + User transcript (well-formatted) as JSON to S3.
+    Format: { "transcript": [ {"role": "assistant", "content": "..."}, {"role": "user", "content": "..."}, ... ] }
+    """
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    rid = assessment_result_id or "unknown"
+    key = f"{base_folder}/transcripts/{rid}_{ts}_combined_transcript.json"
+    body = json.dumps(
+        {
+            "assessment_result_id": assessment_result_id,
+            "user_id": user_id,
+            "video_token": video_token,
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "total_turns": len(merged_messages),
+            "transcript": merged_messages,
+        },
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=body,
+        ContentType="application/json",
+        Metadata={
+            "assessment_result_id": assessment_result_id or "",
+            "user_id": user_id or "",
+            "video_token": video_token or "",
+            "kind": "combined_transcript",
+        },
+    )
+    logger.info("[Transcript] S3 combined transcript JSON s3://%s/%s (%d turns)", bucket, key, len(merged_messages))
+    return key
+
+
 async def run_user_audio_post_process(
     audio_bytes: bytes,
     *,
@@ -269,6 +313,7 @@ async def run_user_audio_post_process(
 
         merged = merge_live_transcript_with_user_stt(live, stt_text)
 
+        # Upload user-only communication JSON (backward compat)
         comm_key = await asyncio.to_thread(
             put_s3_communication_json_sync,
             s3_client,
@@ -280,6 +325,19 @@ async def run_user_audio_post_process(
             stt_text,
         )
         _render(f"TRANSCRIPT_JSON_S3 key={comm_key}")
+
+        # Upload combined AI + User transcript (well-formatted)
+        combined_key = await asyncio.to_thread(
+            put_s3_combined_transcript_json_sync,
+            s3_client,
+            s3_bucket,
+            base_folder,
+            assessment_result_id,
+            user_id,
+            video_token,
+            merged,
+        )
+        _render(f"COMBINED_TRANSCRIPT_S3 key={combined_key} turns={len(merged)}")
 
         ok = await asyncio.to_thread(
             mongo_set_transcript_sync,
