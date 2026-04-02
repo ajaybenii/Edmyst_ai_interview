@@ -1274,12 +1274,13 @@
                     <div class="setup-card-status" id="setupStatus1"></div>
                 </div>
 
-                <!-- Step 2: Fullscreen (auto after screen share) -->
+                <!-- Step 2: Fullscreen -->
                 <div class="setup-card" id="setupCard2" style="display:none;">
                     <div class="setup-card-icon">🔲</div>
-                    <div class="setup-card-title">Fullscreen Mode Active</div>
-                    <div class="setup-card-desc">Your browser is now in fullscreen mode for a secure interview environment.</div>
-                    <div class="setup-card-check">✅ Fullscreen activated</div>
+                    <div class="setup-card-title">Enter Fullscreen Mode</div>
+                    <div class="setup-card-desc">For a secure interview environment, this session must be completed in fullscreen mode.</div>
+                    <button class="overlay-btn" id="setupFullscreenBtn" onclick="setupStepFullscreen()">🔲 Enter Fullscreen</button>
+                    <div class="setup-card-status" id="setupStatus2"></div>
                 </div>
 
                 <!-- Step 3: Photo Capture -->
@@ -1813,6 +1814,8 @@
         let networkWarned = false;
         /** Finalized chat turns for backend STT merge + Mongo (user | assistant). */
         let interviewTranscriptTurns = [];
+        /** True when finalizeUserIfOpen() already appended this user turn (AI spoke before isFinal); isFinal must not addMessage again. */
+        let userTurnPreemptCommitted = false;
 
         // Interview Timer (30 minutes = 1800 seconds)
         const INTERVIEW_DURATION = 30 * 60; // 30 minutes
@@ -2651,6 +2654,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             console.log('SETUP: step 1 — screen share clicked');
             const statusEl = document.getElementById('setupStatus1');
             statusEl.textContent = '';
+            document.getElementById('setupScreenShareBtn').disabled = true;
 
             try {
                 console.log('SETUP: requesting screen share');
@@ -2660,55 +2664,48 @@ registerProcessor('pcm-processor', PCMProcessor);
             } catch (e) {
                 console.error('SETUP: screen share failed', e);
                 statusEl.textContent = '❌ Screen share was denied or cancelled. Please try again and select "Entire Screen".';
+                document.getElementById('setupScreenShareBtn').disabled = false;
                 return;
             }
 
-            // Step 1 done → proceed to Step 2 (Fullscreen)
+            // Step 1 done → expose Step 2 (Fullscreen button)
             markStepDone(1);
             activateStep(2);
-            await setupStepFullscreen();
-        }
-
-        /** Step 2: Fullscreen (automatic after screen share) */
-        async function setupStepFullscreen() {
-            console.log('SETUP: step 2 — fullscreen');
             document.getElementById('setupCard1').style.display = 'none';
             document.getElementById('setupCard2').style.display = 'block';
+        }
+
+        /** Step 2: Fullscreen (manual activation via Step 2 Card) */
+        async function setupStepFullscreen() {
+            console.log('SETUP: step 2 — fullscreen');
+            const statusEl = document.getElementById('setupStatus2');
+            statusEl.textContent = '';
+            document.getElementById('setupFullscreenBtn').disabled = true;
 
             if (!isFullscreenActive()) {
                 try {
                     await goFullscreen(document.documentElement);
                     console.log('SETUP: fullscreen result', { active: isFullscreenActive() });
                 } catch (e) {
-                    console.warn('SETUP: fullscreen failed', e);
+                    console.warn('SETUP: fullscreen throw (likely lack of transient activation)', e);
                 }
             }
 
+            // Small buffer for DOM update (important for Webkit returning from Fullscreen APIs)
+            await new Promise(r => setTimeout(r, 100));
+
             if (!isFullscreenActive()) {
                 console.warn('SETUP: fullscreen not active — retrying setup');
-                document.getElementById('setupCard2').querySelector('.setup-card-check').textContent = '⚠️ Fullscreen failed. Please try again.';
-                document.getElementById('setupCard2').innerHTML += '<button class="overlay-btn" style="margin-top:16px" onclick="retryFullscreen()">🔲 Enter Fullscreen</button>';
+                statusEl.innerHTML = '⚠️ Fullscreen could not be activated automatically.<br>Please try again.';
+                document.getElementById('setupFullscreenBtn').disabled = false;
                 return;
             }
 
             // Step 2 done → proceed to Step 3 (Photo)
             markStepDone(2);
-            await new Promise(r => setTimeout(r, 800)); // Brief pause to show success
+            await new Promise(r => setTimeout(r, 400)); // Smooth UX transition
             activateStep(3);
             showPhotoCaptureStep();
-        }
-
-        /** Retry fullscreen from step 2 */
-        async function retryFullscreen() {
-            try {
-                await goFullscreen(document.documentElement);
-            } catch (_) {}
-
-            if (isFullscreenActive()) {
-                markStepDone(2);
-                activateStep(3);
-                showPhotoCaptureStep();
-            }
         }
 
         /** Step 3: Show photo capture */
@@ -2855,10 +2852,12 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         function finalizeUserIfOpen() {
             // When the model starts speaking, Gemini may not have sent inputTranscription.isFinal yet.
-            // Previously we cleared userTextBuffer here and lost the candidate's words entirely (Mongo showed only assistant).
+            // Persist words to interviewTranscriptTurns but do NOT call addMessage — the live typing bubble
+            // already shows this text. Calling addMessage here + again on isFinal duplicated "YOU" rows.
             const pending = String(userTextBuffer || '').trim();
             if (pending.length >= 1 && !pending.includes('[SYSTEM]')) {
-                addMessage(pending, false);
+                interviewTranscriptTurns.push({ role: 'user', content: pending });
+                userTurnPreemptCommitted = true;
             }
             if (currentUserMessage) {
                 currentUserMessage.classList.remove('typing');
@@ -3136,6 +3135,7 @@ registerProcessor('pcm-processor', PCMProcessor);
 
             isActive = true;
             interviewTranscriptTurns = [];
+            userTurnPreemptCommitted = false;
             timeoutAutoSubmitScheduled = false;
             fiveMinuteWarningSent = false;
             lastUserFinalSpeechAt = Date.now();
@@ -3221,6 +3221,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                                 userIsSpeaking = true;
                                 userTextBuffer = "";
                                 currentUserMessage = null;
+                                userTurnPreemptCommitted = false;
                             }
 
                             if (!userTextBuffer) {
@@ -3240,10 +3241,34 @@ registerProcessor('pcm-processor', PCMProcessor);
                                     silenceWelfareLatched = false;
                                 }
                                 if (trimmed.length >= 1) {
-                                    addMessage(trimmed, false);
+                                    if (userTurnPreemptCommitted) {
+                                        userTurnPreemptCommitted = false;
+                                        const last = interviewTranscriptTurns[interviewTranscriptTurns.length - 1];
+                                        if (last && last.role === 'user' && last.content !== trimmed) {
+                                            last.content = trimmed;
+                                            const chat = document.getElementById('chatMessages');
+                                            const userMsgs = chat && chat.querySelectorAll('.message.user:not(.typing)');
+                                            const bubble = userMsgs && userMsgs[userMsgs.length - 1];
+                                            const c = bubble && bubble.querySelector('.content');
+                                            if (c) {
+                                                c.textContent = trimmed;
+                                            }
+                                        }
+                                    } else {
+                                        if (currentUserMessage && currentUserMessage.parentNode) {
+                                            currentUserMessage.remove();
+                                        }
+                                        currentUserMessage = null;
+                                        addMessage(trimmed, false);
+                                    }
+                                } else {
+                                    userTurnPreemptCommitted = false;
+                                    if (currentUserMessage && currentUserMessage.parentNode) {
+                                        currentUserMessage.remove();
+                                    }
+                                    currentUserMessage = null;
                                 }
                                 userTextBuffer = "";
-                                currentUserMessage = null;
                                 userIsSpeaking = false;
                             }
                         }
@@ -3636,7 +3661,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                     try {
                         const pendingUser = String(userTextBuffer || '').trim();
                         if (pendingUser.length > 0 && !pendingUser.includes('[SYSTEM]')) {
-                            interviewTranscriptTurns.push({ role: 'user', content: pendingUser });
+                            const lastT = interviewTranscriptTurns[interviewTranscriptTurns.length - 1];
+                            if (!(lastT && lastT.role === 'user' && lastT.content === pendingUser)) {
+                                interviewTranscriptTurns.push({ role: 'user', content: pendingUser });
+                            }
                         }
                     } catch (ePending) { /* ignore */ }
                     // Snapshot before submitPendingTranscript() — that call clears interviewTranscriptTurns on success.
