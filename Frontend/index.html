@@ -2308,12 +2308,49 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
+        /** Wait until document is visible (or timeout). Reduces Failed to fetch when iframe goes hidden before uploads. */
+        async function waitForUploadFriendlyVisibility(maxWaitMs) {
+            if (typeof document === 'undefined') return;
+            if (document.visibilityState === 'visible') return;
+            const start = Date.now();
+            try {
+                window.focus();
+            } catch (e) { /* cross-origin / noop */ }
+            try {
+                if (window.parent && window.parent !== window) window.parent.focus();
+            } catch (e) { /* cross-origin */ }
+            await new Promise((resolve) => {
+                const finish = () => {
+                    document.removeEventListener('visibilitychange', onVis);
+                    resolve();
+                };
+                const onVis = () => {
+                    if (document.visibilityState === 'visible') finish();
+                };
+                document.addEventListener('visibilitychange', onVis);
+                const poll = () => {
+                    if (document.visibilityState === 'visible') {
+                        finish();
+                        return;
+                    }
+                    if (Date.now() - start >= maxWaitMs) {
+                        document.removeEventListener('visibilitychange', onVis);
+                        resolve();
+                        return;
+                    }
+                    setTimeout(poll, 200);
+                };
+                poll();
+            });
+        }
+
         // Stop recordings  
         async function stopRecordings() {
-            // Hidden tabs throttle timers/MediaRecorder/fetch; brief wait improves upload success to Render/S3 proxy.
+            await waitForUploadFriendlyVisibility(10000);
+            // Let visibility / layout settle before stopping MediaRecorders (chunks + fetch less likely to race hidden state).
+            await new Promise(r => setTimeout(r, 350));
             if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-                Logger.log('warn', 'stopRecordings: document hidden — waiting briefly before flush', getViewDiagnostics());
-                await new Promise(r => setTimeout(r, 400));
+                Logger.log('warn', 'stopRecordings: still hidden after wait — proceeding with flush', getViewDiagnostics());
             }
             const uploadPromises = [];
 
@@ -2357,7 +2394,7 @@ registerProcessor('pcm-processor', PCMProcessor);
         let _recordingUploadChain = Promise.resolve();
 
         // Save recording locally and upload
-        async function saveRecording(blob, type, maxRetries = 3) {
+        async function saveRecording(blob, type, maxRetries = 5) {
             const prev = _recordingUploadChain;
             let releaseChain;
             _recordingUploadChain = new Promise((r) => { releaseChain = r; });
@@ -2369,7 +2406,7 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         }
 
-        async function saveRecordingUnlocked(blob, type, maxRetries = 3) {
+        async function saveRecordingUnlocked(blob, type, maxRetries = 5) {
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
             const ext = type === 'rrweb' ? 'json' : 'webm';
             const filename = `interview_${type}_${timestamp}.${ext}`;
@@ -2474,6 +2511,9 @@ registerProcessor('pcm-processor', PCMProcessor);
                         url: `${API_BASE}/api/upload-recording`
                     });
                     if (attempt < maxRetries) {
+                        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                            await waitForUploadFriendlyVisibility(6000);
+                        }
                         await new Promise(r => setTimeout(r, Math.random() * 1000 + (attempt * 1000)));
                     } else {
                         console.error(`Upload ${type} ultimately failed after ${maxRetries} attempts:`, e);
@@ -3627,9 +3667,8 @@ registerProcessor('pcm-processor', PCMProcessor);
                 isActive = false;
 
                 document.getElementById('fullscreenWarning').classList.remove('active');
-                if (isFullscreenActive()) {
-                    exitFullscreen().catch(() => { });
-                }
+                // Do NOT exit fullscreen here — leaving fullscreen can hide the iframe and break fetch(upload-recording).
+                // exitFullscreen runs after stopRecordings() in the async finalize block below.
 
                 const timerEl = document.getElementById('interviewTimer');
                 timerEl.classList.remove('active', 'warning', 'critical');
@@ -3695,6 +3734,10 @@ registerProcessor('pcm-processor', PCMProcessor);
                             await stopRecordings();
                         } catch (e) {
                             Logger.log('warn', 'stopRecordings error', { error: e.message });
+                        }
+
+                        if (isFullscreenActive()) {
+                            exitFullscreen().catch(() => { });
                         }
 
                         stopAudioStream();
