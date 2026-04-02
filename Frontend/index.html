@@ -2290,7 +2290,8 @@ registerProcessor('pcm-processor', PCMProcessor);
                     }
                 };
 
-                screenRecorder.start();
+                // Timeslice so chunks exist before stop (default-only blob can look like 0 chunks mid-stop in logs; also more robust if stop races).
+                screenRecorder.start(1000);
                 screenRecorderStartedAt = Date.now();
                 isRecordingScreen = true;
 
@@ -2306,6 +2307,11 @@ registerProcessor('pcm-processor', PCMProcessor);
 
         // Stop recordings  
         async function stopRecordings() {
+            // Hidden tabs throttle timers/MediaRecorder/fetch; brief wait improves upload success to Render/S3 proxy.
+            if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+                Logger.log('warn', 'stopRecordings: document hidden — waiting briefly before flush', getViewDiagnostics());
+                await new Promise(r => setTimeout(r, 400));
+            }
             const uploadPromises = [];
 
             if (audioRecorder && audioRecorder.state !== 'inactive') {
@@ -2831,6 +2837,12 @@ registerProcessor('pcm-processor', PCMProcessor);
         function addMessage(text, isAI = true) {
             const t = String(text || '').trim();
             if (!t || t.includes('[SYSTEM]')) return null;
+            if (!isAI) {
+                const last = interviewTranscriptTurns[interviewTranscriptTurns.length - 1];
+                if (last && last.role === 'user' && last.content === t) {
+                    return null;
+                }
+            }
             interviewTranscriptTurns.push({ role: isAI ? 'assistant' : 'user', content: t });
             const chat = document.getElementById('chatMessages');
             const msg = document.createElement('div');
@@ -2842,6 +2854,12 @@ registerProcessor('pcm-processor', PCMProcessor);
         }
 
         function finalizeUserIfOpen() {
+            // When the model starts speaking, Gemini may not have sent inputTranscription.isFinal yet.
+            // Previously we cleared userTextBuffer here and lost the candidate's words entirely (Mongo showed only assistant).
+            const pending = String(userTextBuffer || '').trim();
+            if (pending.length >= 1 && !pending.includes('[SYSTEM]')) {
+                addMessage(pending, false);
+            }
             if (currentUserMessage) {
                 currentUserMessage.classList.remove('typing');
                 currentUserMessage = null;
@@ -3221,7 +3239,7 @@ registerProcessor('pcm-processor', PCMProcessor);
                                     lastUserFinalSpeechAt = Date.now();
                                     silenceWelfareLatched = false;
                                 }
-                                if (trimmed.length >= 2) {
+                                if (trimmed.length >= 1) {
                                     addMessage(trimmed, false);
                                 }
                                 userTextBuffer = "";
