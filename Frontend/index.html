@@ -3678,26 +3678,11 @@ registerProcessor('pcm-processor', PCMProcessor);
                         .filter(function (t) {
                             return t.content.length > 0;
                         });
-                    // CRITICAL ORDER: parent must persist transcript (update_assessment_result) while
-                    // video_token is still valid. notifyEdyAssessmentComplete() marks assessment completed
-                    // and invalidates the token — if that runs first, parent's persist gets "Video token expired".
-                    try {
-                        if (window.parent && window.parent !== window) {
-                            window.parent.postMessage(
-                                {
-                                    type: 'EDY_AUDIO_INTERVIEW_COMPLETE',
-                                    source: 'edmyst-audio-interview',
-                                    transcript: transcriptSnapshot
-                                },
-                                EDY_PARENT_POSTMESSAGE_ORIGIN
-                            );
-                            console.log('[EdyAudioInterview] postMessage to parent (before completion notify)', {
-                                transcriptTurns: transcriptSnapshot.length
-                            });
-                        }
-                    } catch (ePost) {
-                        console.warn('[EdyAudioInterview] postMessage to parent failed', ePost);
-                    }
+                    // Order matters:
+                    // 1) Persist transcript + upload recordings while this document is still alive.
+                    // 2) If parent receives EDY_AUDIO_INTERVIEW_COMPLETE first, many hosts remove the iframe —
+                    //    then fetch(upload-recording) and transcript/pending never run (only candidate_photo from earlier).
+                    // 3) Parent transcript persist must run BEFORE notifyEdyAssessmentComplete() (token may invalidate).
                     try {
                         try {
                             await submitPendingTranscript();
@@ -3713,6 +3698,24 @@ registerProcessor('pcm-processor', PCMProcessor);
                         }
 
                         stopAudioStream();
+
+                        try {
+                            if (window.parent && window.parent !== window) {
+                                window.parent.postMessage(
+                                    {
+                                        type: 'EDY_AUDIO_INTERVIEW_COMPLETE',
+                                        source: 'edmyst-audio-interview',
+                                        transcript: transcriptSnapshot
+                                    },
+                                    EDY_PARENT_POSTMESSAGE_ORIGIN
+                                );
+                                console.log('[EdyAudioInterview] postMessage to parent (after uploads, before completion notify)', {
+                                    transcriptTurns: transcriptSnapshot.length
+                                });
+                            }
+                        } catch (ePost) {
+                            console.warn('[EdyAudioInterview] postMessage to parent failed', ePost);
+                        }
 
                         try {
                             await notifyEdyAssessmentComplete(endReason);
