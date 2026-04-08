@@ -12,6 +12,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded" rel="stylesheet">
     <!-- rrweb for mobile recording -->
     <script src="https://cdn.jsdelivr.net/npm/rrweb@2.0.0-alpha.11/dist/rrweb.min.js"></script>
+    <!-- Tailwind CSS (for new setup flow) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         * {
             margin: 0;
@@ -1236,74 +1240,222 @@
     <div class="noise"></div>
     <div class="accent-stripe"></div>
 
-    <!-- ===================== SETUP VIEW ===================== -->
-    <div id="setupView" class="setup-view">
-        <div class="setup-container">
-            <div class="setup-header">
-                <div class="setup-logo">🎙️</div>
-                <h1 class="setup-title">Interview Setup</h1>
-                <p class="setup-subtitle">Complete the following steps to prepare for your interview</p>
+    <!-- ===================== SETUP VIEW (Upgraded Wizard) ===================== -->
+    <div id="setupView" class="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 flex flex-col font-sans transition-opacity duration-300" style="position:relative;z-index:100;">
+        
+        <!-- Progress Bar -->
+        <div class="mx-auto w-full max-w-3xl px-4 sm:px-6 pt-4 sm:pt-6">
+            <div class="flex items-center gap-1.5 sm:gap-2 mb-2">
+                <div id="pb1" class="h-1.5 sm:h-2 flex-1 rounded-full bg-blue-600 transition-all duration-300"></div>
+                <div id="pb2" class="h-1.5 sm:h-2 flex-1 rounded-full bg-gray-200 transition-all duration-300"></div>
+                <div id="pb3" class="h-1.5 sm:h-2 flex-1 rounded-full bg-gray-200 transition-all duration-300"></div>
+                <div id="pb4" class="h-1.5 sm:h-2 flex-1 rounded-full bg-gray-200 transition-all duration-300"></div>
+                <div id="pb5" class="h-1.5 sm:h-2 flex-1 rounded-full bg-gray-200 transition-all duration-300"></div>
+                <div id="pb6" class="h-1.5 sm:h-2 flex-1 rounded-full bg-gray-200 transition-all duration-300"></div>
             </div>
+            <div class="text-xs sm:text-sm text-gray-500 font-medium">Step <span id="wizStepNum">1</span> of 6</div>
+        </div>
 
-            <!-- Step Indicators -->
-            <div class="setup-steps">
-                <div class="setup-step active" id="setupStep1">
-                    <div class="step-number">1</div>
-                    <div class="step-label">Screen Share</div>
-                </div>
-                <div class="setup-step-line" id="setupLine1"></div>
-                <div class="setup-step" id="setupStep2">
-                    <div class="step-number">2</div>
-                    <div class="step-label">Fullscreen</div>
-                </div>
-                <div class="setup-step-line" id="setupLine2"></div>
-                <div class="setup-step" id="setupStep3">
-                    <div class="step-number">3</div>
-                    <div class="step-label">Photo Capture</div>
-                </div>
-            </div>
-
-            <!-- Step Content Area -->
-            <div class="setup-content">
-                <!-- Step 1: Screen Share -->
-                <div class="setup-card" id="setupCard1">
-                    <div class="setup-card-icon">🖥️</div>
-                    <div class="setup-card-title">Share Your Entire Screen</div>
-                    <div class="setup-card-desc">Screen sharing is required for proctoring. When prompted, please select <strong>"Entire Screen"</strong> for the best experience.</div>
-                    <button class="overlay-btn" id="setupScreenShareBtn" onclick="setupStepScreenShare()">🚀 Begin Screen Share</button>
-                    <div class="setup-card-status" id="setupStatus1"></div>
-                </div>
-
-                <!-- Step 2: Fullscreen -->
-                <div class="setup-card" id="setupCard2" style="display:none;">
-                    <div class="setup-card-icon">🔲</div>
-                    <div class="setup-card-title">Enter Fullscreen Mode</div>
-                    <div class="setup-card-desc">For a secure interview environment, this session must be completed in fullscreen mode.</div>
-                    <button class="overlay-btn" id="setupFullscreenBtn" onclick="setupStepFullscreen()">🔲 Enter Fullscreen</button>
-                    <div class="setup-card-status" id="setupStatus2"></div>
-                </div>
-
-                <!-- Step 3: Photo Capture -->
-                <div class="setup-card" id="setupCard3" style="display:none;">
-                    <div class="setup-card-icon">📸</div>
-                    <div class="setup-card-title">Capture Your Photo</div>
-                    <div class="setup-card-desc">Position yourself clearly in the frame and capture your photo. This is mandatory.</div>
-                    <div id="photoCapturePreview" style="display:flex; flex-direction:column; align-items:center; margin:16px 0;">
-                        <video id="photoCaptureVideo" autoplay muted playsinline></video>
-                        <canvas id="photoCaptureCanvas" style="display:none;"></canvas>
-                        <img id="photoCapturedImg" alt="Captured photo" />
+        <div class="flex-1 flex items-center justify-center overflow-hidden" style="padding-bottom:80px;">
+            <div class="w-full max-w-3xl px-4 sm:px-6 py-6 sm:py-8" id="wizardContainer">
+                
+                <!-- ── STEP 1: WELCOME ── -->
+                <div class="wiz-step flex flex-col items-center text-center px-4" id="wStep1">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-50 border border-blue-100 mb-6">
+                        <i data-lucide="sparkles" class="h-8 w-8 text-blue-600"></i>
                     </div>
-                    <div id="photoCaptureActions">
-                        <button class="overlay-btn" id="capturePhotoBtn" onclick="capturePhoto()">📸 Capture Candidate Photo</button>
-                    </div>
-                    <div id="photoConfirmActions">
-                        <button class="overlay-btn danger" onclick="retakePhoto()">🔄 Retake</button>
-                        <button class="overlay-btn" onclick="confirmPhoto()">✅ Confirm & Continue</button>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-3">Welcome to your AI Interview</h2>
+                    <p class="text-gray-500 max-w-md mx-auto mb-8 text-sm">This quick setup ensures your camera, microphone and browser are ready. It takes less than two minutes.</p>
+                    <div class="w-full max-w-md bg-white rounded-2xl border border-gray-100 p-5 text-left shadow-sm mb-6 space-y-4">
+                        <div class="flex items-start gap-3">
+                            <i data-lucide="clock" class="w-5 h-5 text-blue-500 shrink-0 mt-0.5"></i>
+                            <div><h3 class="text-sm font-semibold text-gray-900">Duration</h3><p class="text-xs text-gray-500">Approx. 30 minutes</p></div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <i data-lucide="shield" class="w-5 h-5 text-emerald-500 shrink-0 mt-0.5"></i>
+                            <div><h3 class="text-sm font-semibold text-gray-900">Proctored</h3><p class="text-xs text-gray-500">Camera &amp; Screen will be monitored throughout.</p></div>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <i data-lucide="headphones" class="w-5 h-5 text-amber-500 shrink-0 mt-0.5"></i>
+                            <div><h3 class="text-sm font-semibold text-gray-900">No Earphones</h3><p class="text-xs text-gray-500">Use your device's built-in speakers &amp; mic only.</p></div>
+                        </div>
                     </div>
                 </div>
+
+                <!-- ── STEP 2: CAMERA + PHOTO CAPTURE ── -->
+                <div class="wiz-step hidden flex flex-col items-center text-center px-4" id="wStep2">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-purple-50 border border-purple-100 mb-6">
+                        <i data-lucide="camera" class="h-8 w-8 text-purple-600"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Verify Camera &amp; Capture Photo</h2>
+                    <p class="text-gray-500 text-sm max-w-sm mb-6">Start your camera, then capture a clear photo of yourself for identity verification.</p>
+
+                    <!-- Camera preview -->
+                    <div class="w-full max-w-md rounded-2xl border border-gray-200 bg-white overflow-hidden mb-4 shadow-sm">
+                        <div class="aspect-video bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center relative">
+                            <video id="photoCaptureVideo" autoplay muted playsinline class="absolute inset-0 w-full h-full object-cover hidden"></video>
+                            <img id="photoCapturedImg" class="absolute inset-0 w-full h-full object-cover hidden" alt="Captured photo" />
+                            <div id="wVideoPlaceholder" class="flex flex-col items-center gap-3">
+                                <i data-lucide="video-off" class="h-10 w-10 text-gray-500"></i>
+                                <span class="text-sm text-gray-400 font-medium">Click below to start camera</span>
+                            </div>
+                            <!-- LIVE badge -->
+                            <div id="wCamLiveBadge" class="absolute top-2.5 right-2.5 items-center gap-1.5 bg-emerald-500/20 text-emerald-400 rounded-full px-2 py-0.5 border border-emerald-500/30 hidden" style="display:none;">
+                                <div class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" style="display:inline-block;"></div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider">Live</span>
+                            </div>
+                        </div>
+                    </div>
+                    <canvas id="photoCaptureCanvas" style="display:none;"></canvas>
+
+                    <!-- Camera + Photo buttons -->
+                    <div class="flex flex-wrap items-center gap-3 justify-center mb-3">
+                        <button id="wCamBtn" onclick="toggleWizCamera()" class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg active:scale-95 transition-all flex items-center gap-1.5">
+                            <i data-lucide="video" class="w-4 h-4"></i> Start Camera
+                        </button>
+                        <button id="wCaptureBtn" onclick="wizCapturePhoto()" class="bg-blue-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg active:scale-95 transition-all hidden flex items-center gap-1.5">
+                            <i data-lucide="camera" class="w-4 h-4"></i> Capture Photo
+                        </button>
+                    </div>
+                    <!-- Retake / Confirm (post-capture) -->
+                    <div id="wPhotoConfirm" class="flex items-center gap-3 justify-center hidden">
+                        <button onclick="wizRetakePhoto()" class="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-xl text-sm font-semibold active:scale-95 transition-all flex items-center gap-1.5">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i> Retake
+                        </button>
+                        <button onclick="wizConfirmPhoto()" id="wConfirmPhotoBtn" class="bg-emerald-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg active:scale-95 transition-all flex items-center gap-1.5">
+                            <i data-lucide="check" class="w-4 h-4"></i> Confirm &amp; Upload
+                        </button>
+                    </div>
+                    <div id="wPhotoStatus" class="text-xs mt-2 text-gray-500"></div>
+
+                    <!-- Tips -->
+                    <div class="flex flex-col gap-2 w-full max-w-sm mt-4">
+                        <div class="flex items-center gap-2.5 text-xs text-gray-600"><i data-lucide="check-circle-2" class="h-4 w-4 text-emerald-500 shrink-0"></i><span>Face the camera directly and stay centred</span></div>
+                        <div class="flex items-center gap-2.5 text-xs text-gray-600"><i data-lucide="check-circle-2" class="h-4 w-4 text-emerald-500 shrink-0"></i><span>Ensure good lighting on your face</span></div>
+                    </div>
+                </div>
+
+                <!-- ── STEP 3: AUDIO TEST + RECORD/PLAYBACK ── -->
+                <div class="wiz-step hidden flex flex-col items-center text-center px-4" id="wStep3">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-50 border border-teal-100 mb-6">
+                        <i data-lucide="mic" class="h-8 w-8 text-teal-600"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Test Your Audio</h2>
+                    <p class="text-gray-500 max-w-sm mb-6 text-sm leading-relaxed">Check that your microphone and speakers are working properly before starting.</p>
+
+                    <!-- Mic card -->
+                    <div class="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-5 mb-4 shadow-sm">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center"><i data-lucide="mic" class="h-4 w-4 text-blue-600"></i></div>
+                            <span class="text-sm font-semibold text-gray-900">Microphone</span>
+                            <span id="wMicActiveBadge" class="ml-auto items-center gap-1 text-[10px] font-bold text-emerald-600 hidden" style="display:none;">
+                                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" style="display:inline-block;"></span> Active
+                            </span>
+                        </div>
+                        <!-- Waveform bars -->
+                        <div class="flex items-end justify-center h-10 gap-[2px] px-2 mb-4" id="wAudioBars"></div>
+                        <!-- Mic + Record controls -->
+                        <div class="flex items-center gap-2 justify-center flex-wrap">
+                            <button id="wMicBtn" onclick="toggleWizMic()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 active:scale-95 transition-all">
+                                <i data-lucide="mic" class="h-3.5 w-3.5"></i> Start Mic
+                            </button>
+                            <button id="wRecBtn" onclick="wizToggleRecord()" class="hidden flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-all">
+                                <i data-lucide="circle" class="h-3.5 w-3.5"></i> Record
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Playback card (hidden until recording done) -->
+                    <div id="wPlaybackCard" class="w-full max-w-md bg-white border border-gray-200 rounded-2xl p-5 mb-4 shadow-sm hidden">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center"><i data-lucide="volume-2" class="h-4 w-4 text-emerald-600"></i></div>
+                            <span class="text-sm font-semibold text-gray-900">Playback</span>
+                        </div>
+                        <div class="flex items-center gap-2 justify-center">
+                            <button id="wPlayBtn" onclick="wizTogglePlayback()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95 transition-all">
+                                <i data-lucide="play" class="h-3.5 w-3.5"></i> Play Recording
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Warning -->
+                    <div class="flex items-start gap-2.5 text-xs bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 max-w-sm">
+                        <i data-lucide="triangle-alert" class="h-4 w-4 text-amber-500 shrink-0 mt-0.5"></i>
+                        <span class="text-left text-amber-700">Earphones and headphones are typically <strong>not allowed</strong>. Use your device's built-in speakers and mic.</span>
+                    </div>
+                </div>
+
+                <!-- ── STEP 4: SCREEN SHARE + FULLSCREEN ── -->
+                <div class="wiz-step hidden flex flex-col items-center text-center px-4" id="wStep4">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 border border-amber-100 mb-6">
+                        <i data-lucide="shield-alert" class="h-8 w-8 text-amber-600"></i>
+                    </div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Secure Environment</h2>
+                    <p class="text-gray-500 text-sm max-w-sm mb-8">We need screen sharing and fullscreen mode to proctor this interview securely.</p>
+                    
+                    <div class="w-full max-w-md space-y-4 text-left">
+                        <!-- Screen Share row -->
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between" id="wCardScreen">
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="monitor" class="text-blue-500 w-5 h-5"></i>
+                                <div><span class="font-medium text-sm text-gray-900">Screen Share</span><p class="text-xs text-gray-400">Select <strong>Entire Screen</strong></p></div>
+                            </div>
+                            <button id="wBtnScreen" class="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-700 active:scale-95 transition-all" onclick="wDoScreenShare()">Start</button>
+                        </div>
+                        <!-- Fullscreen row (locked until screen share done) -->
+                        <div class="bg-white p-4 rounded-xl border border-gray-200 flex items-center justify-between opacity-40 pointer-events-none transition-all" id="wCardFullscreen">
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="maximize" class="text-indigo-500 w-5 h-5"></i>
+                                <span class="font-medium text-sm text-gray-900">Fullscreen</span>
+                            </div>
+                            <button id="wBtnFullscreen" class="bg-indigo-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold hover:bg-indigo-700 active:scale-95 transition-all" onclick="wDoFullscreen()">Enable</button>
+                        </div>
+                    </div>
+                    <div id="wSecureStatus" class="text-xs mt-4 text-gray-500"></div>
+                </div>
+
+                <!-- ── STEP 5: TIPS ── -->
+                <div class="wiz-step hidden flex flex-col items-center text-center px-4" id="wStep5">
+                    <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100 mb-6">
+                        <i data-lucide="lightbulb" class="h-8 w-8 text-emerald-600"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-2">Tips for Success</h2>
+                    <p class="text-gray-500 text-sm max-w-sm mb-6">A few guidelines before you begin.</p>
+                    <div class="w-full max-w-md text-left space-y-3">
+                        <div class="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm"><i data-lucide="check-circle-2" class="text-emerald-500 w-5 shrink-0"></i><span class="text-sm text-gray-700">Speak clearly and at a natural pace.</span></div>
+                        <div class="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm"><i data-lucide="check-circle-2" class="text-emerald-500 w-5 shrink-0"></i><span class="text-sm text-gray-700">Do not read from notes or other screens.</span></div>
+                        <div class="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm"><i data-lucide="check-circle-2" class="text-emerald-500 w-5 shrink-0"></i><span class="text-sm text-gray-700">Stay focused on the camera throughout.</span></div>
+                        <div class="flex items-center gap-3 bg-white p-3.5 rounded-xl border border-gray-100 shadow-sm"><i data-lucide="check-circle-2" class="text-emerald-500 w-5 shrink-0"></i><span class="text-sm text-gray-700">Ensure a quiet environment and ensure you are alone.</span></div>
+                        <div class="flex items-center gap-3 bg-red-50 p-3.5 rounded-xl border border-red-200 shadow-sm"><i data-lucide="alert-triangle" class="text-red-500 w-5 shrink-0"></i><span class="text-sm text-red-700 font-semibold">If you take any help, you will be failed.</span></div>
+                    </div>
+                </div>
+
+                <!-- ── STEP 6: READY ── -->
+                <div class="wiz-step hidden flex flex-col items-center text-center px-4" id="wStep6">
+                    <div class="flex h-20 w-20 items-center justify-center rounded-full bg-emerald-100 mb-6 shadow-xl shadow-emerald-500/20 animate-pulse">
+                        <i data-lucide="check" class="h-10 w-10 text-emerald-600"></i>
+                    </div>
+                    <h2 class="text-3xl font-bold text-gray-900 mb-3">You're All Set!</h2>
+                    <p class="text-gray-500 mb-8 max-w-md text-sm">Your hardware is verified and the environment is secure. Take a deep breath and start when you are ready.</p>
+                    <button class="bg-gradient-to-r from-emerald-500 to-teal-500 text-white px-8 py-3.5 rounded-xl font-bold text-lg shadow-emerald-500/30 shadow-lg hover:scale-105 hover:shadow-xl transition-all" onclick="initializeWizInterview()">
+                        🚀 Start Interview
+                    </button>
+                </div>
+                
             </div>
         </div>
+            
+        <!-- Navigation (fixed bottom) -->
+        <div class="w-full max-w-3xl mx-auto px-4 sm:px-6 pb-6 flex items-center justify-between" id="wizNav" style="position:fixed;bottom:0;left:50%;transform:translateX(-50%);padding:16px 24px;background:linear-gradient(to top,rgba(248,250,252,1) 60%,rgba(248,250,252,0));z-index:101;">
+            <button id="wPrevBtn" onclick="wGoPrev()" class="text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-xl px-4 py-2.5 text-sm font-medium transition-all flex items-center gap-1.5 opacity-0 pointer-events-none">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i> Back
+            </button>
+            <button id="wNextBtn" onclick="wGoNext()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl px-6 py-2.5 text-sm font-semibold shadow-lg shadow-blue-600/25 hover:shadow-blue-600/40 hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center gap-1.5 active:scale-95">
+                Next <i data-lucide="arrow-right" class="w-4 h-4"></i>
+            </button>
+        </div>
     </div>
+
 
     <!-- ===================== INTERVIEW VIEW (hidden until setup complete) ===================== -->
     <div id="interviewView" style="display:none;">
@@ -3874,6 +4026,232 @@ registerProcessor('pcm-processor', PCMProcessor);
             }
         });
     </script>
+
+    <!-- ===================== WIZARD CONTROLLER ===================== -->
+    <script>
+    (function(){
+        var currentWizStep=1,WIZ_TOTAL=6;
+        var wizCamStream=null,wizMicStream=null,wizAudioCtx=null,wizAnalyser=null,wizAnimId=null,WIZ_BAR_COUNT=20;
+        var wizRecorder=null,wizRecChunks=[],wizRecUrl=null,wizRecPlaying=false,wizRecAudioEl=null;
+
+        /* Step completion flags */
+        var wizStepDone={1:true, 2:false, 3:false, 4:false, 5:true, 6:true};
+        function unlockStep(n){wizStepDone[n]=true;updateNextBtn();}
+
+        function isStep4Done(){
+            var sb=document.getElementById('wBtnScreen');
+            var fb=document.getElementById('wBtnFullscreen');
+            return (sb&&sb.disabled)&&(fb&&fb.disabled);
+        }
+
+        function updateNextBtn(){
+            var next=document.getElementById('wNextBtn');
+            if(!next)return;
+            var allowed=wizStepDone[currentWizStep];
+            if(currentWizStep===4) allowed=isStep4Done();
+            if(allowed){
+                next.disabled=false;next.style.opacity='1';next.style.cursor='pointer';
+                next.className='bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl px-6 py-2.5 text-sm font-semibold shadow-lg shadow-blue-600/25 hover:shadow-blue-600/40 hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center gap-1.5 active:scale-95';
+            }else{
+                next.disabled=true;next.style.opacity='0.4';next.style.cursor='not-allowed';
+                next.className='bg-gray-300 text-gray-500 rounded-xl px-6 py-2.5 text-sm font-semibold transition-all flex items-center gap-1.5 cursor-not-allowed';
+            }
+        }
+
+        function updateWizUI(){
+            var n=document.getElementById('wizStepNum');if(n)n.textContent=currentWizStep;
+            for(var i=1;i<=WIZ_TOTAL;i++){
+                var s=document.getElementById('wStep'+i),p=document.getElementById('pb'+i);
+                if(s){if(i===currentWizStep)s.classList.remove('hidden');else s.classList.add('hidden');}
+                if(p)p.className='h-1.5 sm:h-2 flex-1 rounded-full transition-all duration-300 '+(i<=currentWizStep?'bg-blue-600':'bg-gray-200');
+            }
+            var prev=document.getElementById('wPrevBtn'),next=document.getElementById('wNextBtn');
+            if(prev){prev.style.opacity=(currentWizStep<=1||currentWizStep>=WIZ_TOTAL)?'0':'1';prev.style.pointerEvents=(currentWizStep<=1||currentWizStep>=WIZ_TOTAL)?'none':'auto';}
+            if(next)next.style.display=currentWizStep>=WIZ_TOTAL?'none':'flex';
+            if(currentWizStep!==2)teardownWizCam();
+            if(currentWizStep!==3)teardownWizMic();
+            updateNextBtn();
+        }
+        window.wGoNext=function(){
+            var allowed=wizStepDone[currentWizStep];
+            if(currentWizStep===4) allowed=isStep4Done();
+            if(currentWizStep<WIZ_TOTAL && allowed){
+                currentWizStep++;
+                updateWizUI();
+                if(window.lucide)lucide.createIcons();
+            }
+        };
+        window.wGoPrev=function(){if(currentWizStep>1){currentWizStep--;updateWizUI();if(window.lucide)lucide.createIcons();}};
+
+        /* STEP 2: CAMERA + PHOTO */
+        window.toggleWizCamera=async function(){
+            if(wizCamStream){teardownWizCam();return;}
+            try{
+                wizCamStream=await navigator.mediaDevices.getUserMedia({video:true});
+                var v=document.getElementById('photoCaptureVideo'),pl=document.getElementById('wVideoPlaceholder'),btn=document.getElementById('wCamBtn'),badge=document.getElementById('wCamLiveBadge'),cap=document.getElementById('wCaptureBtn');
+                if(v){v.srcObject=wizCamStream;v.classList.remove('hidden');}
+                if(pl)pl.classList.add('hidden');
+                if(btn){btn.innerHTML='<i data-lucide="video-off" class="w-4 h-4"></i> Stop Camera';btn.className='bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 px-5 py-2 rounded-xl text-sm font-semibold active:scale-95 transition-all flex items-center gap-1.5';}
+                if(badge)badge.style.display='flex';
+                if(cap)cap.classList.remove('hidden');
+                if(window.lucide)lucide.createIcons();
+            }catch(e){console.error('Camera denied',e);alert('Camera access denied.');}
+        };
+        function teardownWizCam(){
+            if(wizCamStream){wizCamStream.getTracks().forEach(function(t){t.stop();});wizCamStream=null;}
+            var v=document.getElementById('photoCaptureVideo'),pl=document.getElementById('wVideoPlaceholder'),btn=document.getElementById('wCamBtn'),badge=document.getElementById('wCamLiveBadge'),cap=document.getElementById('wCaptureBtn'),cf=document.getElementById('wPhotoConfirm');
+            if(v){v.srcObject=null;v.classList.add('hidden');}
+            if(badge)badge.style.display='none';
+            if(cap)cap.classList.add('hidden');
+            if(cf)cf.classList.add('hidden');
+            
+            if(!wizStepDone[2]){
+                if(pl)pl.classList.remove('hidden');
+                if(btn){btn.innerHTML='<i data-lucide="video" class="w-4 h-4"></i> Start Camera';btn.className='bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg active:scale-95 transition-all flex items-center gap-1.5';btn.classList.remove('hidden');}
+            }else{
+                if(btn)btn.classList.add('hidden');
+            }
+            if(window.lucide)lucide.createIcons();
+        }
+        window.wizCapturePhoto=function(){
+            var v=document.getElementById('photoCaptureVideo'),c=document.getElementById('photoCaptureCanvas'),img=document.getElementById('photoCapturedImg');
+            if(!v||!c)return;
+            c.width=v.videoWidth||640;c.height=v.videoHeight||480;
+            c.getContext('2d').drawImage(v,0,0,c.width,c.height);
+            if(img){img.src=c.toDataURL('image/jpeg',0.9);img.classList.remove('hidden');}
+            v.classList.add('hidden');
+            document.getElementById('wCamBtn').classList.add('hidden');
+            document.getElementById('wCaptureBtn').classList.add('hidden');
+            document.getElementById('wPhotoConfirm').classList.remove('hidden');
+            var b=document.getElementById('wCamLiveBadge');if(b)b.style.display='none';
+        };
+        window.wizRetakePhoto=function(){
+            var v=document.getElementById('photoCaptureVideo'),img=document.getElementById('photoCapturedImg');
+            if(img)img.classList.add('hidden');
+            if(v&&wizCamStream)v.classList.remove('hidden');
+            document.getElementById('wCamBtn').classList.remove('hidden');
+            document.getElementById('wCaptureBtn').classList.remove('hidden');
+            document.getElementById('wPhotoConfirm').classList.add('hidden');
+            var b=document.getElementById('wCamLiveBadge');if(b&&wizCamStream)b.style.display='flex';
+        };
+        window.wizConfirmPhoto=async function(){
+            var btn=document.getElementById('wConfirmPhotoBtn'),st=document.getElementById('wPhotoStatus');
+            if(btn){btn.innerHTML='⏳ Uploading...';btn.disabled=true;}
+            try{
+                var c=document.getElementById('photoCaptureCanvas');
+                var blob=await new Promise(function(r){c.toBlob(r,'image/jpeg',0.9);});
+                if(typeof uploadCandidatePhoto==='function')await uploadCandidatePhoto(blob);
+                if(typeof photoCaptureCompleted!=='undefined')photoCaptureCompleted=true;
+                if(st)st.innerHTML='<span class="text-emerald-600 font-semibold">✅ Photo uploaded!</span>';
+            }catch(e){
+                console.error('Photo upload failed:',e);
+                if(st)st.innerHTML='<span class="text-red-500">Upload failed — you can continue.</span>';
+                if(typeof photoCaptureCompleted!=='undefined')photoCaptureCompleted=true;
+            }
+            if(btn){btn.innerHTML='✅ Done';btn.disabled=true;btn.className='bg-emerald-100 text-emerald-700 px-5 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5';}
+            unlockStep(2);
+            teardownWizCam();
+        };
+
+        /* STEP 3: AUDIO */
+        window.toggleWizMic=async function(){
+            if(wizMicStream){teardownWizMic();return;}
+            var btn=document.getElementById('wMicBtn'),badge=document.getElementById('wMicActiveBadge'),recBtn=document.getElementById('wRecBtn');
+            try{
+                wizMicStream=await navigator.mediaDevices.getUserMedia({audio:true});
+                wizAudioCtx=new AudioContext();
+                var src=wizAudioCtx.createMediaStreamSource(wizMicStream);
+                wizAnalyser=wizAudioCtx.createAnalyser();wizAnalyser.fftSize=64;
+                src.connect(wizAnalyser);
+                var ct=document.getElementById('wAudioBars');ct.innerHTML='';
+                var bars=[];
+                for(var i=0;i<WIZ_BAR_COUNT;i++){var b=document.createElement('div');b.className='w-1.5 sm:w-2 rounded-full bg-gradient-to-t from-blue-600 to-indigo-500 transition-all duration-75';b.style.height='4px';bars.push(b);ct.appendChild(b);}
+                var da=new Uint8Array(wizAnalyser.frequencyBinCount);
+                function tick(){wizAnalyser.getByteFrequencyData(da);for(var j=0;j<WIZ_BAR_COUNT;j++){var idx=Math.floor((j/WIZ_BAR_COUNT)*da.length);bars[j].style.height=Math.max(4,(da[idx]/255)*40)+'px';}wizAnimId=requestAnimationFrame(tick);}
+                tick();
+                if(btn){btn.innerHTML='<i data-lucide="mic-off" class="h-3.5 w-3.5"></i> Stop Mic';btn.className='flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 active:scale-95 transition-all';}
+                if(badge)badge.style.display='inline-flex';
+                if(recBtn)recBtn.classList.remove('hidden');
+                unlockStep(3);
+                if(window.lucide)lucide.createIcons();
+            }catch(e){console.error('Mic denied',e);alert('Microphone access denied.');}
+        };
+        function teardownWizMic(){
+            if(wizAnimId)cancelAnimationFrame(wizAnimId);wizAnimId=null;
+            if(wizAudioCtx){try{wizAudioCtx.close();}catch(e){}wizAudioCtx=null;}
+            if(wizMicStream){wizMicStream.getTracks().forEach(function(t){t.stop();});wizMicStream=null;}
+            wizAnalyser=null;
+            var ct=document.getElementById('wAudioBars');if(ct)ct.innerHTML='';
+            var btn=document.getElementById('wMicBtn'),badge=document.getElementById('wMicActiveBadge'),recBtn=document.getElementById('wRecBtn');
+            if(btn){btn.innerHTML='<i data-lucide="mic" class="h-3.5 w-3.5"></i> Start Mic';btn.className='flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 active:scale-95 transition-all';}
+            if(badge)badge.style.display='none';
+            if(recBtn)recBtn.classList.add('hidden');
+            if(wizRecorder&&wizRecorder.state!=='inactive')wizRecorder.stop();wizRecorder=null;
+            if(window.lucide)lucide.createIcons();
+        }
+        window.wizToggleRecord=function(){
+            var btn=document.getElementById('wRecBtn');
+            if(wizRecorder&&wizRecorder.state==='recording'){wizRecorder.stop();if(btn){btn.innerHTML='<i data-lucide="circle" class="h-3.5 w-3.5"></i> Record';btn.className='flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-all';}if(window.lucide)lucide.createIcons();return;}
+            if(!wizMicStream)return;
+            wizRecChunks=[];wizRecUrl=null;
+            wizRecorder=new MediaRecorder(wizMicStream);
+            wizRecorder.ondataavailable=function(e){if(e.data.size>0)wizRecChunks.push(e.data);};
+            wizRecorder.onstop=function(){var blob=new Blob(wizRecChunks,{type:'audio/webm'});wizRecUrl=URL.createObjectURL(blob);document.getElementById('wPlaybackCard').classList.remove('hidden');if(window.lucide)lucide.createIcons();};
+            wizRecorder.start();
+            if(btn){btn.innerHTML='<i data-lucide="square" class="h-3 w-3"></i> Stop';btn.className='flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-gray-800 text-white hover:bg-gray-900 active:scale-95 transition-all';}
+            if(window.lucide)lucide.createIcons();
+        };
+        window.wizTogglePlayback=function(){
+            var btn=document.getElementById('wPlayBtn');
+            if(wizRecPlaying&&wizRecAudioEl){wizRecAudioEl.pause();wizRecAudioEl.currentTime=0;wizRecPlaying=false;if(btn)btn.innerHTML='<i data-lucide="play" class="h-3.5 w-3.5"></i> Play Recording';if(window.lucide)lucide.createIcons();return;}
+            if(!wizRecUrl)return;
+            wizRecAudioEl=new Audio(wizRecUrl);
+            wizRecAudioEl.onended=function(){wizRecPlaying=false;if(btn)btn.innerHTML='<i data-lucide="play" class="h-3.5 w-3.5"></i> Play Recording';if(window.lucide)lucide.createIcons();};
+            wizRecAudioEl.play();wizRecPlaying=true;
+            if(btn)btn.innerHTML='<i data-lucide="square" class="h-3 w-3"></i> Stop';
+            if(window.lucide)lucide.createIcons();
+        };
+
+        /* STEP 4: SCREEN SHARE + FULLSCREEN */
+        window.wDoScreenShare=async function(){
+            var btn=document.getElementById('wBtnScreen');if(btn)btn.disabled=true;
+            try{
+                if(typeof startScreenRecording==='function')await startScreenRecording();
+                if(typeof screenSetupCompleted!=='undefined')screenSetupCompleted=true;
+                if(btn){btn.textContent='✅ Shared';btn.className='bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-1.5 rounded-lg text-xs font-semibold';btn.disabled=true;}
+                var fs=document.getElementById('wCardFullscreen');if(fs){fs.style.opacity='1';fs.style.pointerEvents='auto';}
+                updateNextBtn();
+            }catch(e){console.error('Screen share failed',e);if(btn)btn.disabled=false;var st=document.getElementById('wSecureStatus');if(st)st.innerHTML='<span class="text-red-500">Screen share denied. Select Entire Screen.</span>';}
+        };
+        window.wDoFullscreen=async function(){
+            var btn=document.getElementById('wBtnFullscreen');
+            try{
+                if(typeof goFullscreen==='function')await goFullscreen(document.documentElement);
+                await new Promise(function(r){setTimeout(r,100);});
+                if(typeof isFullscreenActive==='function'&&isFullscreenActive()){
+                    if(btn){btn.textContent='✅ Enabled';btn.className='bg-emerald-50 text-emerald-600 border border-emerald-200 px-4 py-1.5 rounded-lg text-xs font-semibold';btn.disabled=true;}
+                    updateNextBtn();
+                }else{var st=document.getElementById('wSecureStatus');if(st)st.innerHTML='<span class="text-amber-600">Fullscreen could not activate. Try again.</span>';}
+            }catch(e){console.warn('Fullscreen error',e);}
+        };
+
+        /* STEP 6: START INTERVIEW */
+        window.initializeWizInterview=function(){
+            teardownWizCam();teardownWizMic();
+            if(typeof setupCompleted!=='undefined')setupCompleted=true;
+            if(typeof screenSetupCompleted!=='undefined')screenSetupCompleted=true;
+            if(typeof photoCaptureCompleted!=='undefined')photoCaptureCompleted=true;
+            var sv=document.getElementById('setupView'),iv=document.getElementById('interviewView'),nav=document.getElementById('wizNav');
+            if(sv)sv.style.display='none';
+            if(iv)iv.style.display='flex';
+            if(nav)nav.style.display='none';
+            if(typeof startInterview==='function')startInterview();
+        };
+
+        document.addEventListener('DOMContentLoaded',function(){updateWizUI();if(window.lucide)lucide.createIcons();});
+    })();
+    </script>
+
 </body>
 
 </html>
