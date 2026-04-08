@@ -30,14 +30,14 @@ load_dotenv(override=True)
 BASE_DIR = Path(__file__).parent
 
 # Environment
-APP_ENV = os.getenv("APP_ENV", "Dev")  # Dev | Stage | Prod
+CURRENT_ENV = os.getenv("Stage", "Dev")  # Dev | Stage | Prod
 
 # Lambda Function URL for DocumentDB session lookup (bypasses VPC restrictions)
 LAMBDA_SESSION_URL = os.getenv(
     "LAMBDA_SESSION_URL",
     "https://7g7pnrwtqchpsqiz3dnuadh4cu0tdact.lambda-url.us-east-1.on.aws/"
 )
-print(f"[STARTUP] APP_ENV={APP_ENV}")
+print(f"[STARTUP] CURRENT_ENV={CURRENT_ENV}")
 print(f"[STARTUP] LAMBDA_SESSION_URL={LAMBDA_SESSION_URL}")
 
 # Tavus-style screen recordings (Step Function lists tavus/{conversation_id}/)
@@ -80,7 +80,7 @@ def render_log(msg: str) -> None:
 
 
 logger.info(f"[Config] Lambda session lookup URL: {LAMBDA_SESSION_URL}")
-render_log(f"startup Lambda URL configured | APP_ENV={APP_ENV} | Tavus bucket={TAVUS_RECORDINGS_BUCKET} | S3 bucket={os.getenv('AWS_S3_BUCKET', 'edy-temp-videos')}")
+render_log(f"startup Lambda URL configured | CURRENT_ENV={CURRENT_ENV} | Tavus bucket={TAVUS_RECORDINGS_BUCKET} | S3 bucket={os.getenv('AWS_S3_BUCKET', 'edy-temp-videos')}")
 
 # Frontend Logger (frontend.log)
 frontend_logger = logging.getLogger("frontend")
@@ -818,7 +818,7 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
         "conversation_id": None,
     }
     debug_info = {
-        "app_env": APP_ENV,
+        "app_env": CURRENT_ENV,
         "lambda_url": LAMBDA_SESSION_URL,
         "lookup": {
             "video_token": video_token,
@@ -843,7 +843,7 @@ async def get_config(user_id: str, video_token: str, debug: bool = False):
                 defaults["top_right_logo_url"] = data["top_right_logo_url"]
             logger.info(
                 "Config resolved via Lambda | env=%s user_id=%s org=%s",
-                APP_ENV,
+                CURRENT_ENV,
                 user_id,
                 defaults["organization_name"],
             )

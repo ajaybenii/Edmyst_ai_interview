@@ -1,0 +1,84 @@
+name: Deploy Backend to EC2
+
+on:
+  push:
+    branches:
+      - master
+      - stage
+      - dev
+    paths:
+      - 'Backend/**'
+
+jobs:
+  deploy:
+    name: Deploy to EC2 (${{ github.ref_name }})
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set Environment Variables based on branch
+        run: |
+          if [ "${{ github.ref_name }}" = "master" ]; then
+            echo "STAGE=Prod" >> $GITHUB_ENV
+            echo "DEPLOY_PORT=8000" >> $GITHUB_ENV
+          elif [ "${{ github.ref_name }}" = "stage" ]; then
+            echo "STAGE=Stage" >> $GITHUB_ENV
+            echo "DEPLOY_PORT=8001" >> $GITHUB_ENV
+          elif [ "${{ github.ref_name }}" = "dev" ]; then
+            echo "STAGE=Dev" >> $GITHUB_ENV
+            echo "DEPLOY_PORT=8002" >> $GITHUB_ENV
+          fi
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: STAGE,DEPLOY_PORT
+          script: |
+            set -e
+            
+            # Application Directory based on branch
+            APP_DIR="/home/ubuntu/interview-backend-${{ github.ref_name }}"
+            
+            echo "Deploying to $APP_DIR with Stage=$STAGE on Port=$DEPLOY_PORT"
+            
+            # Setup directory if not exists
+            if [ ! -d "$APP_DIR" ]; then
+              git clone -b ${{ github.ref_name }} https://${{ secrets.GH_PAT }}@github.com/ajaybenii/Edmyst_ai_interview.git $APP_DIR
+            fi
+            
+            cd $APP_DIR
+            
+            # Fetch latest code
+            git fetch --all
+            git checkout ${{ github.ref_name }}
+            git pull origin ${{ github.ref_name }}
+            
+            cd Backend
+            
+            # Update .env dynamically (or rely on docker env passing)
+            # Create a simple .env file specifically for this environment
+            cat <<EOF > .env
+            Stage=${STAGE}
+            # Other env vars should be stored securely in AWS Secrets Manager or GitHub Secrets
+            # and echoed here before building if needed
+            EOF
+            
+            # Stop and remove existing container if it exists
+            DOCKER_CONTAINER_NAME="fastapi-app-${{ github.ref_name }}"
+            sudo docker stop $DOCKER_CONTAINER_NAME || true
+            sudo docker rm $DOCKER_CONTAINER_NAME || true
+            
+            # Build new docker image tailored to this branch
+            DOCKER_IMAGE_NAME="fastapi-app-img-${{ github.ref_name }}"
+            sudo docker build -t $DOCKER_IMAGE_NAME .
+            
+            # Run the new container mapping the correct port
+            sudo docker run -d --restart unless-stopped \
+              --name $DOCKER_CONTAINER_NAME \
+              -p $DEPLOY_PORT:8000 \
+              --env Stage=$STAGE \
+              $DOCKER_IMAGE_NAME
+              
+            echo "Deployment successful for Stage: $STAGE on port $DEPLOY_PORT."
